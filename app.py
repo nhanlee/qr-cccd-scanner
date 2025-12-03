@@ -2,7 +2,7 @@ import os
 import base64
 from datetime import datetime
 from PIL import Image
-from flask import Flask, render_template, request, jsonify, send_from_directory
+from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, session
 import mysql.connector
 from dotenv import load_dotenv
 import logging
@@ -27,6 +27,7 @@ app = Flask(__name__,
             template_folder='templates',
             static_folder='static')
 app.logger.setLevel(logging.INFO)
+app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-here")
 
 # Bật debug mode để dễ tìm lỗi
 app.config['DEBUG'] = True
@@ -76,7 +77,7 @@ def init_db():
         `gender` VARCHAR(20),
         `address` TEXT,
         `issue_date` DATE,
-        `phone` VARCHAR(20),  -- Thêm cột số điện thoại
+        `phone` VARCHAR(20),
         `user` VARCHAR(100),
         `front_image` VARCHAR(255),
         `back_image` VARCHAR(255),
@@ -85,11 +86,15 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
     
-    # Thêm user mẫu nếu chưa có
+    # Thêm user mẫu (không cần password)
     cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
                    ("admin", "Administrator", "admin"))
     cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
                    ("user1", "Người dùng 1", "user"))
+    cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
+                   ("user2", "Người dùng 2", "user"))
+    cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
+                   ("staff", "Nhân viên", "staff"))
     
     cursor.close()
     conn.close()
@@ -178,7 +183,66 @@ def parse_qr_text(qr_text: str):
 # -------------------------
 @app.route("/")
 def index():
-    return render_template("index.html")
+    if 'user' in session:
+        return render_template("main.html", username=session['user'])
+    return redirect(url_for('login'))
+
+@app.route("/login", methods=['GET', 'POST'])
+def login():
+    if request.method == 'GET':
+        return render_template("login.html")
+    
+    try:
+        data = request.json
+        username = data.get("username", "").strip()
+        
+        if not username:
+            return jsonify({"ok": False, "msg": "Vui lòng nhập username"}), 400
+        
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Kiểm tra user có tồn tại không
+        cur.execute("SELECT id, username, fullname FROM users WHERE username = %s", (username,))
+        user = cur.fetchone()
+        
+        # Nếu user không tồn tại, tạo mới
+        if not user:
+            cur.execute("INSERT INTO users (username, fullname) VALUES (%s, %s)", 
+                       (username, f"User {username}"))
+            conn.commit()
+            
+            # Lấy lại thông tin user vừa tạo
+            cur.execute("SELECT id, username, fullname FROM users WHERE username = %s", (username,))
+            user = cur.fetchone()
+        
+        cur.close()
+        conn.close()
+        
+        if user:
+            session['user'] = username
+            session['user_id'] = user[0]
+            session['fullname'] = user[2]
+            return jsonify({
+                "ok": True, 
+                "msg": "Đăng nhập thành công",
+                "user": {
+                    "id": user[0],
+                    "username": user[1],
+                    "fullname": user[2]
+                }
+            })
+        else:
+            return jsonify({"ok": False, "msg": "Lỗi hệ thống"}), 500
+            
+    except Exception as e:
+        app.logger.error(f"Login error: {str(e)}")
+        return jsonify({"ok": False, "error": str(e)}), 500
+
+@app.route("/logout")
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
 
 # 1) VERIFY USER
 @app.route("/verify_user", methods=["POST"])
@@ -193,7 +257,6 @@ def verify_user():
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Kiểm tra trong bảng users
         cur.execute("SELECT id, username, fullname FROM users WHERE username = %s", (username,))
         user = cur.fetchone()
         
@@ -375,7 +438,7 @@ def save_cccd_record():
             data.get("gender", ""),
             data.get("address", ""),
             data.get("issue_date") if data.get("issue_date") else None,
-            data.get("phone", ""),  # Thêm số điện thoại
+            data.get("phone", ""),
             data.get("user", ""),
             front_file if front_exists else None,
             back_file if back_exists else None,
@@ -460,7 +523,7 @@ def get_users():
         app.logger.error(f"Get users error: {str(e)}")
         return jsonify({"ok": False, "error": str(e)}), 500
 
-# -----------------------
+# -------------------------
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=True, threaded=True)
