@@ -32,12 +32,12 @@
       position: absolute;
       top: 50%;
       left: 50%;
-      transform: translate(-50%, -50%) scale(2); /* Zoom x2 */
-      width: 200px;
-      height: 200px;
+      transform: translate(-50%, -50%) scale(2.5); /* Zoom lớn hơn */
+      width: 140px;  /* Khung nhỏ hơn */
+      height: 140px; /* Khung nhỏ hơn */
       border: 3px solid #10b981;
-      border-radius: 12px;
-      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.7);
+      border-radius: 8px;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.8);
       z-index: 10;
       pointer-events: none;
     }
@@ -57,12 +57,12 @@
     .scan-frame::after {
       content: "";
       position: absolute;
-      top: 10px;
-      left: 10px;
-      right: 10px;
-      bottom: 10px;
-      border: 2px dashed rgba(16, 185, 129, 0.5);
-      border-radius: 8px;
+      top: 5px;
+      left: 5px;
+      right: 5px;
+      bottom: 5px;
+      border: 2px dashed rgba(16, 185, 129, 0.6);
+      border-radius: 4px;
       pointer-events: none;
     }
     
@@ -96,7 +96,7 @@
       width: 100% !important;
       height: 100% !important;
       object-fit: cover;
-      transform: scale(1.5); /* Additional zoom for QR */
+      transform: scale(2); /* Additional zoom for QR */
     }
     
     #qr-reader div {
@@ -238,18 +238,6 @@
           <div class="camera-overlay mb-4">
             <div id="qr-reader" class="w-full h-full"></div>
             <div class="scan-frame"></div>
-          </div>
-          
-          <div class="text-center mb-4">
-            <button id="btn-switch-camera" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors">
-              <div class="flex items-center">
-                <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/>
-                  <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/>
-                </svg>
-                Đổi camera
-              </div>
-            </button>
           </div>
           
           <div id="qr-info" class="text-sm text-slate-200"></div>
@@ -398,7 +386,7 @@
     }
 
     // ---------------------
-    // QR SCANNER (Camera phía sau với zoom)
+    // QR SCANNER (Camera phía sau với zoom và độ nhạy cao)
     // ---------------------
     async function startQRScanner() {
       try {
@@ -410,14 +398,27 @@
           return;
         }
 
-        // Find back camera
-        let backCamera = cameras.find(cam => 
+        // Find back camera - chỉ sử dụng camera phía sau
+        let backCamera = null;
+        
+        // Strategy 1: Tìm camera có label chứa 'back' hoặc 'rear'
+        backCamera = cameras.find(cam => 
           cam.label.toLowerCase().includes('back') || 
-          cam.label.toLowerCase().includes('rear') ||
-          cam.label.includes('2')
+          cam.label.toLowerCase().includes('rear')
         );
         
-        // If no back camera found, use first camera
+        // Strategy 2: Nếu không tìm thấy, tìm camera có số 2 (thường là camera sau trên điện thoại)
+        if (!backCamera) {
+          backCamera = cameras.find(cam => cam.label.includes('2'));
+        }
+        
+        // Strategy 3: Ưu tiên camera có độ phân giải cao hơn (thường là camera sau)
+        if (!backCamera && cameras.length > 1) {
+          // Ưu tiên camera không phải là 'front'
+          backCamera = cameras.find(cam => !cam.label.toLowerCase().includes('front'));
+        }
+        
+        // Strategy 4: Nếu vẫn không tìm thấy, dùng camera đầu tiên
         let cameraId = backCamera ? backCamera.id : cameras[0].id;
         currentCameraId = cameraId;
 
@@ -429,14 +430,26 @@
         // Initialize scanner
         qrScanner = new Html5Qrcode("qr-reader");
         
-        // Start scanning with zoom configuration
+        // Start scanning với cấu hình độ nhạy cao
         await qrScanner.start(
           cameraId,
           {
-            fps: 10,
-            qrbox: { width: 250, height: 250 },
+            fps: 30,  // Tăng FPS để quét nhanh hơn
+            qrbox: { width: 140, height: 140 },  // Khung quét nhỏ hơn
             aspectRatio: 1.0,
-            disableFlip: false
+            disableFlip: false,
+            experimentalFeatures: {
+              useBarCodeDetectorIfSupported: true
+            },
+            formatsToSupport: [
+              Html5QrcodeSupportedFormats.QR_CODE
+            ],
+            videoConstraints: {
+              facingMode: "environment",  // Luôn dùng camera sau
+              width: { min: 1280, ideal: 1920, max: 2560 },  // Độ phân giải cao
+              height: { min: 720, ideal: 1080, max: 1440 },
+              zoom: { ideal: 2.5 }  // Zoom lớn
+            }
           },
           async (decodedText) => {
             console.log("QR detected:", decodedText);
@@ -459,13 +472,43 @@
             } catch (error) {
               console.error("Error processing QR:", error);
               alert("Lỗi xử lý QR code");
-              await qrScanner.start(cameraId, { fps: 10, qrbox: 250 });
+              // Khởi động lại scanner với cấu hình độ nhạy cao
+              await qrScanner.start(cameraId, { 
+                fps: 30, 
+                qrbox: { width: 140, height: 140 },
+                videoConstraints: {
+                  facingMode: "environment",
+                  zoom: { ideal: 2.5 }
+                }
+              });
             }
           },
           (errorMessage) => {
             // Ignore scanning errors
+            console.debug("Scanning debug:", errorMessage);
           }
-        );
+        ).then(() => {
+          console.log("QR Scanner started successfully with back camera");
+        }).catch(err => {
+          console.error("Failed to start QR scanner with back camera:", err);
+          // Thử với camera đầu tiên nếu lỗi
+          if (cameraId !== cameras[0].id) {
+            qrScanner.start(
+              cameras[0].id,
+              {
+                fps: 30,
+                qrbox: { width: 140, height: 140 },
+                videoConstraints: {
+                  width: { min: 1280 },
+                  height: { min: 720 }
+                }
+              }
+            );
+          } else {
+            document.getElementById('qr-info').innerHTML = 
+              `<div class="p-4 bg-red-900/30 text-red-300 rounded-lg">Lỗi camera: ${err.message}</div>`;
+          }
+        });
         
       } catch (error) {
         console.error("Failed to start QR scanner:", error);
@@ -473,32 +516,6 @@
           `<div class="p-4 bg-red-900/30 text-red-300 rounded-lg">Lỗi camera: ${error.message}</div>`;
       }
     }
-
-    // Switch camera
-    document.getElementById('btn-switch-camera').onclick = async () => {
-      if (!cameras || cameras.length < 2) {
-        alert("Chỉ có 1 camera khả dụng");
-        return;
-      }
-      
-      if (qrScanner && qrScanner.isScanning) {
-        await qrScanner.stop();
-        
-        // Find next camera
-        let currentIndex = cameras.findIndex(cam => cam.id === currentCameraId);
-        let nextIndex = (currentIndex + 1) % cameras.length;
-        currentCameraId = cameras[nextIndex].id;
-        
-        // Restart with new camera
-        await qrScanner.start(
-          currentCameraId,
-          {
-            fps: 10,
-            qrbox: { width: 250, height: 250 }
-          }
-        );
-      }
-    };
 
     function stopQRScanner() {
       if (qrScanner && qrScanner.isScanning) {
@@ -513,7 +530,11 @@
       if (!result.ok) {
         alert(result.msg || "Không đọc được QR code");
         if (qrScanner) {
-          qrScanner.start(currentCameraId, { fps: 10, qrbox: 250 });
+          qrScanner.start(currentCameraId, { 
+            fps: 30, 
+            qrbox: { width: 140, height: 140 },
+            videoConstraints: { facingMode: "environment" }
+          });
         }
         return;
       }
@@ -555,18 +576,18 @@
     }
 
     // ---------------------
-    // CAMERA CAPTURE
+    // CAMERA CAPTURE (Chỉ dùng camera phía sau)
     // ---------------------
     async function startCameraCapture() {
       stopCaptureCamera();
       
       try {
-        // Try to use back camera
+        // Chỉ dùng camera phía sau
         const constraints = {
           video: { 
-            facingMode: "environment",
-            width: { ideal: 1280 },
-            height: { ideal: 720 },
+            facingMode: "environment", // Camera phía sau
+            width: { min: 1280, ideal: 1920, max: 2560 },
+            height: { min: 720, ideal: 1080, max: 1440 },
             zoom: { ideal: 2 } // Request zoom
           }
         };
@@ -584,25 +605,8 @@
         
       } catch (error) {
         console.error("Camera error:", error);
-        // Fallback to any camera
-        try {
-          stream = await navigator.mediaDevices.getUserMedia({
-            video: { 
-              width: { ideal: 1280 },
-              height: { ideal: 720 }
-            }
-          });
-          const videoElem = document.getElementById('video');
-          videoElem.srcObject = stream;
-          videoElem.style.transform = 'scale(1.5)';
-          
-          document.getElementById('save-status').textContent = "Camera đã sẵn sàng (camera trước).";
-          document.getElementById('save-status').className = "text-green-400";
-        } catch (err2) {
-          console.error("Backup camera error:", err2);
-          document.getElementById('save-status').textContent = "Lỗi camera: " + error.message;
-          document.getElementById('save-status').className = "text-red-400";
-        }
+        document.getElementById('save-status').textContent = "Lỗi: Không thể truy cập camera phía sau. Vui lòng kiểm tra quyền camera.";
+        document.getElementById('save-status').className = "text-red-400";
       }
     }
 

@@ -86,6 +86,19 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
     
+    # Thêm user mẫu
+    sample_users = [
+        ("admin", "Administrator", "admin"),
+        ("user1", "User One", "user"),
+        ("user2", "User Two", "user"),
+        ("staff", "Staff Member", "staff"),
+        ("operator", "Operator", "operator")
+    ]
+    
+    for username, fullname, role in sample_users:
+        cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
+                      (username, fullname, role))
+    
     cursor.close()
     conn.close()
 
@@ -196,16 +209,6 @@ def login():
         cur.execute("SELECT id, username, fullname FROM users WHERE username = %s", (username,))
         user = cur.fetchone()
         
-        # Nếu user không tồn tại, tạo mới
-        if not user:
-            cur.execute("INSERT INTO users (username, fullname) VALUES (%s, %s)", 
-                       (username, username))
-            conn.commit()
-            
-            # Lấy lại thông tin user vừa tạo
-            cur.execute("SELECT id, username, fullname FROM users WHERE username = %s", (username,))
-            user = cur.fetchone()
-        
         cur.close()
         conn.close()
         
@@ -223,7 +226,7 @@ def login():
                 }
             })
         else:
-            return jsonify({"ok": False, "msg": "Lỗi hệ thống"}), 500
+            return jsonify({"ok": False, "msg": "User không tồn tại"}), 404
             
     except Exception as e:
         app.logger.error(f"Login error: {str(e)}")
@@ -460,6 +463,22 @@ def serve_image(filename):
     except Exception as e:
         app.logger.error(f"Serve image error: {str(e)}")
         return jsonify({"ok": False, "error": "Không tìm thấy ảnh"}), 404
+
+# 8) GET ALL USERS (for debugging)
+@app.route("/users", methods=["GET"])
+def get_users():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(dictionary=True)
+        cur.execute("SELECT id, username, fullname, role, created_at FROM users ORDER BY username")
+        users = cur.fetchall()
+        cur.close()
+        conn.close()
+        
+        return jsonify({"ok": True, "users": users})
+    except Exception as e:
+        app.logger.error(f"Get users error: {str(e)}")
+        return jsonify({"ok": False, "error": str(e)}), 500
 
 # -------------------------
 if __name__ == "__main__":

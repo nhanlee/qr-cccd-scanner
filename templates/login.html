@@ -50,7 +50,7 @@
         </svg>
       </div>
       <h1 class="text-2xl font-bold text-white">QR CCCD Scanner</h1>
-      <p class="text-slate-400 mt-2">Nhập username để bắt đầu</p>
+      <p class="text-slate-400 mt-2">Nhập username để đăng nhập</p>
     </div>
     
     <!-- Login Form -->
@@ -60,7 +60,7 @@
           <label class="block text-sm font-medium text-slate-300 mb-2">Tên đăng nhập</label>
           <input type="text" id="username" 
                  class="login-input w-full px-4 py-3 rounded-lg text-white placeholder-slate-500 focus:outline-none"
-                 placeholder="Nhập username của bạn..." 
+                 placeholder="Nhập username..." 
                  autocomplete="username"
                  required
                  autofocus>
@@ -74,7 +74,7 @@
         </button>
         
         <div class="text-center text-sm text-slate-400 pt-4">
-          <p class="text-xs">Nhập username của bạn để sử dụng hệ thống</p>
+          <p class="text-xs">Vui lòng nhập username hợp lệ để sử dụng hệ thống</p>
         </div>
       </div>
     </form>
@@ -98,7 +98,7 @@
       btnLogin.textContent = 'Đang đăng nhập...';
       btnLogin.disabled = true;
       
-      loginStatus.innerHTML = '<p class="text-yellow-400">Đang xử lý...</p>';
+      loginStatus.innerHTML = '<p class="text-yellow-400">Đang kiểm tra tài khoản...</p>';
       
       try {
         const response = await fetch('/login', {
