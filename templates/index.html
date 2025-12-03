@@ -1,0 +1,751 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>QR CCCD Scanner</title>
+
+  <!-- Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <style>
+    body { background: linear-gradient(180deg,#0f172a,#07103a); color: #e6eef8; }
+    #qr-reader video {
+      width: 100% !important;
+      border-radius: 8px;
+    }
+    #qr-reader div {
+      border: none !important;
+    }
+    
+    /* Khung overlay cho camera */
+    .camera-overlay {
+      position: relative;
+      width: 100%;
+    }
+    
+    .camera-frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 250px;
+      height: 250px;
+      border: 3px solid #10b981;
+      border-radius: 8px;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+      z-index: 10;
+      pointer-events: none;
+    }
+    
+    .camera-frame::before {
+      content: "Đưa QR code vào khung";
+      position: absolute;
+      top: -30px;
+      left: 0;
+      width: 100%;
+      color: #10b981;
+      font-size: 12px;
+      text-align: center;
+    }
+    
+    .capture-frame {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 300px;
+      height: 200px;
+      border: 3px solid #f59e0b;
+      border-radius: 8px;
+      box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.5);
+      z-index: 10;
+      pointer-events: none;
+    }
+    
+    .capture-frame::before {
+      content: "Đưa CCCD vào khung";
+      position: absolute;
+      top: -30px;
+      left: 0;
+      width: 100%;
+      color: #f59e0b;
+      font-size: 12px;
+      text-align: center;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex items-center justify-center p-4">
+
+  <div class="w-full max-w-xl bg-white/5 rounded-2xl shadow-xl p-4">
+
+    <h1 class="text-2xl font-semibold text-white text-center mb-4">Quét QR - CCCD</h1>
+
+    <!-- USER LOGIN -->
+    <div class="mb-4">
+      <label class="block text-sm text-slate-200">Username</label>
+      <div class="flex gap-2 mt-2">
+        <input id="username" class="flex-1 p-2 rounded-md bg-slate-900 text-white"
+               placeholder="Nhập username..." />
+        <button id="btn-check-user"
+                class="px-3 py-2 bg-emerald-500 rounded-md text-white hover:bg-emerald-600 transition-colors">
+                Check
+        </button>
+      </div>
+      <p id="user-status" class="mt-2 text-sm"></p>
+    </div>
+
+    <!-- QR SCANNER -->
+    <div class="mb-5">
+      <label class="block text-sm text-slate-200 mb-2">Quét QR CCCD</label>
+      <div class="camera-overlay">
+        <div id="qr-reader" class="w-full my-2 rounded-md overflow-hidden bg-slate-900 p-2 relative">
+          <div class="camera-frame"></div>
+        </div>
+      </div>
+
+      <div id="qr-info" class="mt-3 text-sm text-slate-200"></div>
+    </div>
+
+    <!-- CAPTURE SECTION -->
+    <div id="capture-section" class="hidden">
+      <hr class="my-3 border-slate-700"/>
+      <h2 class="text-white font-medium mb-2">Chụp CCCD</h2>
+
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        <div class="bg-slate-800 p-2 rounded relative">
+          <div class="text-xs text-slate-300 mb-1">Camera preview</div>
+          <div class="camera-overlay">
+            <video id="video" autoplay playsinline class="w-full rounded bg-black"></video>
+            <div class="capture-frame"></div>
+          </div>
+
+          <div class="flex gap-2 mt-2">
+            <button id="btn-front" class="flex-1 py-2 bg-amber-500 rounded hover:bg-amber-600 transition-colors">
+              Chụp mặt trước
+            </button>
+            <button id="btn-back" class="flex-1 py-2 bg-rose-500 rounded hover:bg-rose-600 transition-colors">
+              Chụp mặt sau
+            </button>
+          </div>
+        </div>
+
+        <div class="space-y-3">
+          <div>
+            <div class="text-xs text-slate-300">Ảnh mặt trước</div>
+            <img id="preview-front"
+                 class="w-full rounded bg-slate-700 h-32 object-contain border border-slate-600"/>
+          </div>
+          <div>
+            <div class="text-xs text-slate-300">Ảnh mặt sau</div>
+            <img id="preview-back"
+                 class="w-full rounded bg-slate-700 h-32 object-contain border border-slate-600"/>
+          </div>
+        </div>
+      </div>
+
+      <!-- Thêm số điện thoại -->
+      <div class="mt-4">
+        <label class="block text-sm text-slate-200 mb-2">Số điện thoại</label>
+        <input id="input-phone" type="tel" 
+               class="w-full p-2 rounded-md bg-slate-900 text-white mb-2"
+               placeholder="Nhập số điện thoại (bắt buộc)" />
+      </div>
+
+      <div class="flex gap-2 mt-4">
+        <button id="btn-save-info" class="flex-1 py-2 bg-green-600 rounded hover:bg-green-700 transition-colors">
+          Lưu thông tin
+        </button>
+        <button id="btn-reset" class="py-2 px-3 bg-gray-600 rounded hover:bg-gray-700 transition-colors">
+          Reset
+        </button>
+      </div>
+
+      <p id="save-status" class="mt-2 text-yellow-200 text-sm"></p>
+    </div>
+
+    <!-- RECORDS VIEW -->
+    <hr class="my-4 border-slate-700"/>
+    <div>
+      <h3 class="text-white font-medium mb-2">Xem bản ghi theo user</h3>
+
+      <div class="flex gap-2">
+        <input id="view-username"
+               class="flex-1 p-2 rounded-md bg-slate-900 text-white"
+               placeholder="Username..." />
+        <button id="btn-view-records"
+                class="px-3 py-2 bg-sky-600 rounded-md hover:bg-sky-700 transition-colors">
+                Xem
+        </button>
+      </div>
+
+      <div id="records-area" class="mt-3 text-sm text-slate-200"></div>
+    </div>
+  </div>
+
+  <!-- QR LIB -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+  <script>
+    let currentUser = null;
+    let parsedQR = null;
+    let frontImg = null;
+    let backImg = null;
+    let stream = null;
+    let qrScanner = null;
+
+    // ---------------------
+    //   CHECK USER
+    // ---------------------
+    document.getElementById("btn-check-user").onclick = async () => {
+      const username = document.getElementById("username").value.trim();
+
+      if (!username) {
+        alert("Vui lòng nhập username");
+        return;
+      }
+
+      const userStatus = document.getElementById("user-status");
+      userStatus.innerHTML = '<span class="text-yellow-300">Đang kiểm tra user...</span>';
+
+      try {
+        const res = await fetch("/verify_user", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify({ username })
+        });
+        
+        const j = await res.json();
+
+        if (j.ok) {
+          currentUser = username;
+          userStatus.innerHTML = `<span class="text-green-400">✅ User: ${username} - Sẵn sàng quét QR</span>`;
+          
+          // Khởi động QR scanner
+          startQRScanner();
+          
+        } else {
+          currentUser = null;
+          userStatus.innerHTML = `<span class="text-red-400">❌ ${j.msg || "User không tồn tại"}</span>`;
+          alert(j.msg || "User không tồn tại");
+        }
+      } catch (error) {
+        userStatus.innerHTML = `<span class="text-red-400">❌ Lỗi kết nối server</span>`;
+        console.error("Error checking user:", error);
+      }
+    };
+
+    // ---------------------
+    //  QR SCANNER (Camera phía sau)
+    // ---------------------
+    function startQRScanner() {
+      Html5Qrcode.getCameras().then(cameras => {
+        if (!cameras || cameras.length === 0) {
+          document.getElementById("qr-reader").innerHTML = 
+            '<div class="text-red-400 text-center p-4">Không tìm thấy camera. Vui lòng kiểm tra quyền truy cập camera.</div>';
+          return;
+        }
+
+        // Ưu tiên chọn camera phía sau (environment)
+        let selectedCameraId = cameras[0].id;
+        let hasBackCamera = false;
+        
+        // Tìm camera phía sau
+        for (let camera of cameras) {
+          if (camera.label.toLowerCase().includes("back") || 
+              camera.label.toLowerCase().includes("rear") ||
+              camera.label.includes("2") || // Một số điện thoại có camera 2 là phía sau
+              camera.label.includes("1")) { // Thử các trường hợp khác
+            selectedCameraId = camera.id;
+            hasBackCamera = true;
+            break;
+          }
+        }
+        
+        // Nếu không tìm thấy, thử dùng facingMode
+        if (!hasBackCamera && cameras.length > 1) {
+          // Thử chọn camera thứ 2 (thường là camera phía sau)
+          selectedCameraId = cameras[1].id;
+        }
+
+        // Dừng scanner cũ nếu có
+        if (qrScanner && qrScanner.isScanning) {
+          qrScanner.stop().catch(() => {});
+        }
+
+        qrScanner = new Html5Qrcode("qr-reader");
+        
+        qrScanner.start(
+          selectedCameraId,
+          {
+            fps: 10,
+            qrbox: { width: 250, height: 250 },
+            aspectRatio: 1.7777778
+          },
+          async (decodedText) => {
+            console.log("QR detected:", decodedText);
+            
+            // Dừng scanner tạm thời
+            await qrScanner.stop();
+            
+            // Lấy frame từ camera và gửi lên server
+            const videoFrame = getCurrentVideoFrame();
+            
+            if (!videoFrame) {
+              alert("Không thể lấy hình ảnh từ camera");
+              await qrScanner.start(selectedCameraId, { fps: 10, qrbox: 250 });
+              return;
+            }
+
+            try {
+              const res = await fetch("/scan_qr_image", {
+                method: "POST",
+                headers: {"Content-Type": "application/json"},
+                body: JSON.stringify({ 
+                  image: videoFrame,
+                  qr_text: decodedText
+                })
+              });
+
+              const result = await res.json();
+              handleQRResult(result);
+              
+            } catch (error) {
+              console.error("Error sending QR data:", error);
+              alert("Lỗi kết nối server");
+              await qrScanner.start(selectedCameraId, { fps: 10, qrbox: 250 });
+            }
+          },
+          (errorMessage) => {
+            // Bỏ qua các lỗi không quan trọng
+            console.debug("QR scan debug:", errorMessage);
+          }
+        ).catch(err => {
+          console.error("Failed to start QR scanner:", err);
+          // Thử lại với camera đầu tiên nếu lỗi
+          if (selectedCameraId !== cameras[0].id) {
+            qrScanner.start(
+              cameras[0].id,
+              {
+                fps: 10,
+                qrbox: { width: 250, height: 250 },
+                aspectRatio: 1.7777778
+              }
+            );
+          }
+        });
+        
+      }).catch(err => {
+        console.error("Cannot get cameras:", err);
+        document.getElementById("qr-reader").innerHTML = 
+          '<div class="text-red-400 text-center p-4">Không thể truy cập camera. Vui lòng cấp quyền camera.</div>';
+      });
+    }
+
+    // Hàm lấy frame từ video (nếu có)
+    function getCurrentVideoFrame() {
+      const videoElem = document.getElementById("video");
+      if (!videoElem || !videoElem.srcObject) {
+        // Nếu chưa có video, tạo một canvas tạm
+        const canvas = document.createElement("canvas");
+        canvas.width = 640;
+        canvas.height = 480;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#000000";
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        ctx.fillStyle = "#ffffff";
+        ctx.font = "20px Arial";
+        ctx.fillText("Camera Preview", 200, 240);
+        return canvas.toDataURL("image/jpeg", 0.8);
+      }
+      
+      const canvas = document.createElement("canvas");
+      canvas.width = videoElem.videoWidth || 640;
+      canvas.height = videoElem.videoHeight || 480;
+      
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(videoElem, 0, 0, canvas.width, canvas.height);
+      
+      return canvas.toDataURL("image/jpeg", 0.8);
+    }
+
+    // Hàm xử lý kết quả QR
+    function handleQRResult(result) {
+      if (!result.ok) {
+        alert(result.msg || "Không đọc được QR code");
+        // Khởi động lại scanner
+        Html5Qrcode.getCameras().then(cams => {
+          if (cams.length > 0) {
+            let selectedCamera = cams[0].id;
+            for (let cam of cams) {
+              if (cam.label.toLowerCase().includes("back")) {
+                selectedCamera = cam.id;
+                break;
+              }
+            }
+            qrScanner.start(selectedCamera, { fps: 10, qrbox: 250 });
+          }
+        });
+        return;
+      }
+
+      parsedQR = result.data;
+
+      document.getElementById("qr-info").innerHTML = `
+        <div class="bg-slate-800 p-3 rounded">
+          <div class="grid grid-cols-2 gap-2">
+            <div><b>CCCD mới:</b></div>
+            <div class="font-mono">${parsedQR.cccd_moi || 'N/A'}</div>
+            
+            <div><b>CMND cũ:</b></div>
+            <div>${parsedQR.cmnd_cu || 'N/A'}</div>
+            
+            <div><b>Tên:</b></div>
+            <div class="font-semibold">${parsedQR.name || 'N/A'}</div>
+            
+            <div><b>Ngày sinh:</b></div>
+            <div>${parsedQR.dob || 'N/A'}</div>
+            
+            <div><b>Giới tính:</b></div>
+            <div>${parsedQR.gender || 'N/A'}</div>
+            
+            <div><b>Địa chỉ:</b></div>
+            <div class="col-span-1">${parsedQR.address || 'N/A'}</div>
+            
+            <div><b>Ngày cấp:</b></div>
+            <div>${parsedQR.issue_date || 'N/A'}</div>
+          </div>
+          <div class="mt-3 p-2 rounded ${result.duplicate ? 'bg-red-900/30 text-red-300' : 'bg-green-900/30 text-green-300'}">
+            ${result.duplicate ? '⚠️ CCCD đã tồn tại trong hệ thống' : '✅ Hợp lệ – chưa tồn tại'}
+          </div>
+        </div>
+      `;
+
+      // Ẩn QR scanner
+      document.getElementById("qr-reader").style.display = "none";
+      
+      // Hiển thị phần chụp ảnh
+      startCameraCapture();
+    }
+
+    // ---------------------
+    // CAMERA CAPTURE (Camera phía sau)
+    // ---------------------
+    async function startCameraCapture() {
+      const captureSection = document.getElementById("capture-section");
+      captureSection.classList.remove("hidden");
+      
+      // Dừng QR scanner nếu đang chạy
+      if (qrScanner && qrScanner.isScanning) {
+        await qrScanner.stop();
+      }
+
+      try {
+        // Ưu tiên camera phía sau
+        const constraints = {
+          video: { 
+            facingMode: "environment", // Camera phía sau
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          }
+        };
+
+        stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        const videoElem = document.getElementById("video");
+        videoElem.srcObject = stream;
+        
+        // Hiển thị thông báo camera đã sẵn sàng
+        document.getElementById("save-status").textContent = "Camera đã sẵn sàng. Vui lòng chụp ảnh CCCD.";
+        document.getElementById("save-status").className = "mt-2 text-green-400 text-sm";
+        
+      } catch (error) {
+        console.error("Camera error:", error);
+        // Nếu không được hỗ trợ facingMode, thử camera thông thường
+        try {
+          stream = await navigator.mediaDevices.getUserMedia({
+            video: { 
+              width: { ideal: 1280 },
+              height: { ideal: 720 }
+            }
+          });
+          const videoElem = document.getElementById("video");
+          videoElem.srcObject = stream;
+          document.getElementById("save-status").textContent = "Camera đã sẵn sàng (camera trước). Vui lòng chụp ảnh CCCD.";
+          document.getElementById("save-status").className = "mt-2 text-green-400 text-sm";
+        } catch (err2) {
+          console.error("Backup camera error:", err2);
+          document.getElementById("save-status").textContent = "Lỗi truy cập camera: " + error.message;
+          document.getElementById("save-status").className = "mt-2 text-red-400 text-sm";
+        }
+      }
+    }
+
+    function snap() {
+      const video = document.getElementById("video");
+      const canvas = document.createElement("canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      return canvas.toDataURL("image/jpeg", 0.9);
+    }
+
+    // ---------------------
+    // CHỤP FRONT
+    // ---------------------
+    document.getElementById("btn-front").onclick = async () => {
+      if (!parsedQR) {
+        alert("Vui lòng quét QR trước khi chụp ảnh");
+        return;
+      }
+
+      try {
+        frontImg = snap();
+        document.getElementById("preview-front").src = frontImg;
+
+        const formData = new FormData();
+        formData.append("cccd", parsedQR.cccd_moi);
+        formData.append("image", frontImg);
+
+        const res = await fetch("/save_front_image", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await res.json();
+        if (result.ok) {
+          document.getElementById("save-status").textContent = "✅ Đã lưu ảnh mặt trước";
+          document.getElementById("save-status").className = "mt-2 text-green-400 text-sm";
+        } else {
+          document.getElementById("save-status").textContent = "❌ Lỗi lưu ảnh mặt trước: " + (result.error || "Unknown");
+          document.getElementById("save-status").className = "mt-2 text-red-400 text-sm";
+        }
+      } catch (error) {
+        console.error("Error saving front image:", error);
+        document.getElementById("save-status").textContent = "❌ Lỗi kết nối server";
+        document.getElementById("save-status").className = "mt-2 text-red-400 text-sm";
+      }
+    };
+
+    // ---------------------
+    // CHỤP BACK
+    // ---------------------
+    document.getElementById("btn-back").onclick = async () => {
+      if (!parsedQR) {
+        alert("Vui lòng quét QR trước khi chụp ảnh");
+        return;
+      }
+
+      try {
+        backImg = snap();
+        document.getElementById("preview-back").src = backImg;
+
+        const formData = new FormData();
+        formData.append("cccd", parsedQR.cccd_moi);
+        formData.append("image", backImg);
+
+        const res = await fetch("/save_back_image", {
+          method: "POST",
+          body: formData
+        });
+
+        const result = await res.json();
+        if (result.ok) {
+          document.getElementById("save-status").textContent = "✅ Đã lưu ảnh mặt sau";
+          document.getElementById("save-status").className = "mt-2 text-green-400 text-sm";
+        } else {
+          document.getElementById("save-status").textContent = "❌ Lỗi lưu ảnh mặt sau: " + (result.error || "Unknown");
+          document.getElementById("save-status").className = "mt-2 text-red-400 text-sm";
+        }
+      } catch (error) {
+        console.error("Error saving back image:", error);
+        document.getElementById("save-status").textContent = "❌ Lỗi kết nối server";
+        document.getElementById("save-status").className = "mt-2 text-red-400 text-sm";
+      }
+    };
+
+    // ---------------------
+    // LƯU THÔNG TIN (với số điện thoại)
+    // ---------------------
+    document.getElementById("btn-save-info").onclick = async () => {
+      if (!currentUser) {
+        alert("Vui lòng đăng nhập trước");
+        return;
+      }
+
+      if (!parsedQR) {
+        alert("Vui lòng quét QR code trước");
+        return;
+      }
+
+      if (!frontImg || !backImg) {
+        alert("Vui lòng chụp đầy đủ ảnh mặt trước và mặt sau");
+        return;
+      }
+
+      const phoneInput = document.getElementById("input-phone");
+      const phone = phoneInput.value.trim();
+      
+      if (!phone) {
+        alert("Vui lòng nhập số điện thoại");
+        phoneInput.focus();
+        return;
+      }
+      
+      // Validate số điện thoại
+      const phoneRegex = /^[0-9]{10,11}$/;
+      if (!phoneRegex.test(phone)) {
+        alert("Số điện thoại không hợp lệ. Vui lòng nhập 10-11 chữ số");
+        phoneInput.focus();
+        return;
+      }
+
+      const saveStatus = document.getElementById("save-status");
+      saveStatus.textContent = "⏳ Đang lưu thông tin...";
+      saveStatus.className = "mt-2 text-yellow-300 text-sm";
+
+      try {
+        const payload = {
+          ...parsedQR,
+          phone: phone,
+          user: currentUser
+        };
+
+        const res = await fetch("/save_cccd_record", {
+          method: "POST",
+          headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(payload)
+        });
+
+        const result = await res.json();
+
+        if (result.ok) {
+          saveStatus.textContent = "✅ Lưu thông tin thành công!";
+          saveStatus.className = "mt-2 text-green-400 text-sm";
+          
+          // Reset form sau 2 giây
+          setTimeout(() => {
+            alert("Lưu thông tin thành công!");
+            location.reload();
+          }, 2000);
+          
+        } else {
+          saveStatus.textContent = "❌ Lỗi lưu thông tin: " + (result.error || "Unknown");
+          saveStatus.className = "mt-2 text-red-400 text-sm";
+        }
+      } catch (error) {
+        console.error("Error saving record:", error);
+        saveStatus.textContent = "❌ Lỗi kết nối server";
+        saveStatus.className = "mt-2 text-red-400 text-sm";
+      }
+    };
+
+    // RESET
+    document.getElementById("btn-reset").onclick = () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (qrScanner && qrScanner.isScanning) {
+        qrScanner.stop();
+      }
+      location.reload();
+    };
+
+    // ---------------------
+    // VIEW RECORDS
+    // ---------------------
+    document.getElementById("btn-view-records").onclick = async () => {
+      const username = document.getElementById("view-username").value.trim();
+
+      if (!username) {
+        alert("Vui lòng nhập username để xem bản ghi");
+        return;
+      }
+
+      const recordsArea = document.getElementById("records-area");
+      recordsArea.innerHTML = '<div class="text-yellow-300">Đang tải dữ liệu...</div>';
+
+      try {
+        const res = await fetch(`/records/${encodeURIComponent(username)}`);
+        const result = await res.json();
+
+        if (!result.ok) {
+          recordsArea.innerHTML = `<div class="text-red-400">❌ Lỗi: ${result.error || "Không thể tải dữ liệu"}</div>`;
+          return;
+        }
+
+        const records = result.records;
+
+        if (!records || records.length === 0) {
+          recordsArea.innerHTML = `<div class="text-gray-400">Không có bản ghi nào cho user: ${username}</div>`;
+          return;
+        }
+
+        let html = `
+          <div class="overflow-x-auto">
+            <table class="w-full text-xs border-collapse">
+              <thead>
+                <tr class="bg-slate-800">
+                  <th class="p-2 border border-slate-700">CCCD</th>
+                  <th class="p-2 border border-slate-700">Tên</th>
+                  <th class="p-2 border border-slate-700">Ngày sinh</th>
+                  <th class="p-2 border border-slate-700">Số ĐT</th>
+                  <th class="p-2 border border-slate-700">Ảnh</th>
+                  <th class="p-2 border border-slate-700">Thời gian</th>
+                </tr>
+              </thead>
+              <tbody>
+        `;
+
+        records.forEach((r, index) => {
+          const rowClass = index % 2 === 0 ? 'bg-slate-900/50' : 'bg-slate-800/50';
+          let imgs = `<a href="/images/${r.front_image}" target="_blank" class="text-sky-400 hover:text-sky-300">Front</a>`;
+          
+          if (r.face_cropped) {
+            imgs += ` | <a href="/images/${r.face_cropped}" target="_blank" class="text-sky-400 hover:text-sky-300">Face</a>`;
+          }
+
+          html += `
+            <tr class="${rowClass}">
+              <td class="p-2 border border-slate-700 font-mono">${r.cccd_moi || 'N/A'}</td>
+              <td class="p-2 border border-slate-700">${r.name || 'N/A'}</td>
+              <td class="p-2 border border-slate-700">${r.dob || 'N/A'}</td>
+              <td class="p-2 border border-slate-700">${r.phone || 'N/A'}</td>
+              <td class="p-2 border border-slate-700">${imgs}</td>
+              <td class="p-2 border border-slate-700 text-xs">${r.created_at ? r.created_at.split('T')[0] : 'N/A'}</td>
+            </tr>
+          `;
+        });
+
+        html += `
+              </tbody>
+            </table>
+            <div class="mt-2 text-gray-400 text-xs">
+              Tổng số bản ghi: ${records.length}
+            </div>
+          </div>
+        `;
+
+        recordsArea.innerHTML = html;
+
+      } catch (error) {
+        console.error("Error fetching records:", error);
+        recordsArea.innerHTML = '<div class="text-red-400">❌ Lỗi kết nối server</div>';
+      }
+    };
+
+    // Cleanup khi đóng trang
+    window.addEventListener('beforeunload', () => {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+      }
+      if (qrScanner && qrScanner.isScanning) {
+        qrScanner.stop();
+      }
+    });
+
+  </script>
+
+</body>
+</html>
