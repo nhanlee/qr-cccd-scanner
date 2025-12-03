@@ -86,19 +86,6 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
     
-    # Thêm user mẫu
-    sample_users = [
-        ("admin", "Administrator", "admin"),
-        ("user1", "User One", "user"),
-        ("user2", "User Two", "user"),
-        ("staff", "Staff Member", "staff"),
-        ("operator", "Operator", "operator")
-    ]
-    
-    for username, fullname, role in sample_users:
-        cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
-                      (username, fullname, role))
-    
     cursor.close()
     conn.close()
 
@@ -144,12 +131,26 @@ def crop_face_using_yolo(img_path, save_path):
 # -------------------------
 def parse_qr_text(qr_text: str):
     if not qr_text:
-        return None
+        return None, "QR code trống"
         
-    parts = qr_text.strip().split("|")
+    # Loại bỏ khoảng trắng đầu cuối
+    qr_text = qr_text.strip()
+    
+    # Kiểm tra định dạng cơ bản: có chứa ký tự "|"
+    if "|" not in qr_text:
+        return None, "QR không đúng định dạng CCCD (thiếu ký tự '|')"
+    
+    parts = qr_text.split("|")
+    
+    # Định dạng CCCD thường có ít nhất 7 phần
     if len(parts) < 7:
-        return None
-        
+        return None, f"QR thiếu thông tin. Cần 7 phần, chỉ có {len(parts)} phần"
+    
+    # Kiểm tra từng phần
+    for i, part in enumerate(parts[:7]):
+        if not part.strip():
+            return None, f"Phần thông tin thứ {i+1} bị trống"
+    
     cccd_moi = parts[0].strip() if len(parts) > 0 else ""
     cmnd_cu = parts[1].strip() if len(parts) > 1 else ""
     name = parts[2].strip() if len(parts) > 2 else ""
@@ -179,7 +180,7 @@ def parse_qr_text(qr_text: str):
         "gender": gender,
         "address": address,
         "issue_date": issue_date.isoformat() if issue_date else ""
-    }
+    }, None
 
 # -------------------------
 # ROUTES
@@ -245,26 +246,45 @@ def scan_qr_image():
         img_data = data.get("image", "")
         qr_text = data.get("qr_text", "")
         
-        # Ưu tiên sử dụng qr_text trực tiếp từ scanner
         parsed = None
+        error_msg = None
+        
+        # Ưu tiên sử dụng qr_text trực tiếp từ scanner
         if qr_text:
-            parsed = parse_qr_text(qr_text)
+            parsed, error_msg = parse_qr_text(qr_text)
         
         # Nếu không có qr_text hoặc parse thất bại, thử decode từ ảnh
-        if not parsed and img_data:
-            encoded = img_data.split(",")[1] if "," in img_data else img_data
-            img_bytes = base64.b64decode(encoded)
+        if not parsed and not error_msg and img_data:
+            try:
+                encoded = img_data.split(",")[1] if "," in img_data else img_data
+                img_bytes = base64.b64decode(encoded)
 
-            img_array = np.frombuffer(img_bytes, np.uint8)
-            img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
-            qr = cv2.QRCodeDetector()
-            text, pts, _ = qr.detectAndDecode(img)
-            
-            if text:
-                parsed = parse_qr_text(text)
+                img_array = np.frombuffer(img_bytes, np.uint8)
+                img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                qr = cv2.QRCodeDetector()
+                text, pts, _ = qr.detectAndDecode(img)
+                
+                if text:
+                    parsed, error_msg = parse_qr_text(text)
+                else:
+                    error_msg = "Không tìm thấy QR code trong ảnh"
+            except Exception as img_error:
+                app.logger.error(f"Image decode error: {img_error}")
+                error_msg = "Lỗi xử lý ảnh"
 
+        if not parsed and error_msg:
+            return jsonify({
+                "ok": False, 
+                "msg": error_msg,
+                "reload": True  # Thêm flag để client biết reload scanner
+            }), 400
+        
         if not parsed:
-            return jsonify({"ok": False, "msg": "Không đọc được QR hoặc QR sai định dạng"}), 400
+            return jsonify({
+                "ok": False, 
+                "msg": "Không đọc được QR code",
+                "reload": True
+            }), 400
 
         # Check duplicate
         conn = get_db_connection()
@@ -283,7 +303,12 @@ def scan_qr_image():
 
     except Exception as e:
         app.logger.error(f"QR scan error: {str(e)}")
-        return jsonify({"ok": False, "error": str(e), "msg": "Lỗi xử lý QR"}), 500
+        return jsonify({
+            "ok": False, 
+            "error": str(e), 
+            "msg": "Lỗi xử lý QR",
+            "reload": True
+        }), 500
 
 # 3) SAVE FRONT IMAGE + CROP
 @app.route("/save_front_image", methods=["POST"])
