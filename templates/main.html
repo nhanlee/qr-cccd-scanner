@@ -8,8 +8,8 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- ZXing Library - Phiên bản đơn giản hơn -->
-  <script src="https://unpkg.com/@zxing/library@0.19.1/umd/index.min.js"></script>
+  <!-- jsQR Library -->
+  <script src="https://cdn.jsdelivr.net/npm/jsqr@1.4.0/dist/jsQR.min.js"></script>
   
   <style>
     body {
@@ -232,6 +232,14 @@
         <div class="card p-6">
           <h2 class="text-xl font-semibold text-white mb-4">Quét QR CCCD</h2>
           
+          <div id="camera-check" class="mb-4 p-4 bg-yellow-900/30 text-yellow-300 rounded-lg hidden">
+            <p class="font-semibold">⚠️ Yêu cầu quyền truy cập camera</p>
+            <p class="text-sm mt-1">Vui lòng cho phép truy cập camera để sử dụng tính năng quét QR</p>
+            <button id="btn-enable-camera" class="mt-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg">
+              Cho phép camera
+            </button>
+          </div>
+          
           <div class="camera-overlay mb-4">
             <video id="videoElement" autoplay playsinline></video>
             <div class="scan-frame"></div>
@@ -239,7 +247,7 @@
           
           <div id="qr-info" class="text-sm text-slate-200"></div>
           
-          <!-- Nút chuyển camera (nếu cần) -->
+          <!-- Nút chuyển camera -->
           <div class="mt-4 text-center">
             <button id="btn-switch-camera" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm">
               Chuyển camera
@@ -343,9 +351,79 @@
     let backImg = null;
     let stream = null;
     let qrStream = null;
-    let codeReader = null;
     let isProcessingQR = false;
     let currentCamera = 'environment'; // Mặc định dùng camera phía sau
+    let isCameraAvailable = false;
+    let scanningActive = false;
+    let canvas = null;
+    let canvasContext = null;
+
+    // ---------------------
+    // KIỂM TRA VÀ CẤU HÌNH CAMERA
+    // ---------------------
+    // Kiểm tra xem trình duyệt có hỗ trợ getUserMedia không
+    function checkCameraSupport() {
+      // Kiểm tra các phiên bản khác nhau của getUserMedia
+      navigator.getUserMedia = navigator.getUserMedia || 
+                               navigator.webkitGetUserMedia || 
+                               navigator.mozGetUserMedia || 
+                               navigator.msGetUserMedia;
+      
+      // Tạo mediaDevices nếu chưa có
+      if (!navigator.mediaDevices) {
+        navigator.mediaDevices = {};
+      }
+      
+      // Thêm getUserMedia vào mediaDevices nếu chưa có
+      if (!navigator.mediaDevices.getUserMedia) {
+        if (navigator.getUserMedia) {
+          navigator.mediaDevices.getUserMedia = function(constraints) {
+            return new Promise(function(resolve, reject) {
+              navigator.getUserMedia(constraints, resolve, reject);
+            });
+          };
+        } else {
+          return false;
+        }
+      }
+      
+      return !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia);
+    }
+
+    // Hiển thị thông báo yêu cầu quyền camera
+    function showCameraPermissionRequest() {
+      document.getElementById('camera-check').classList.remove('hidden');
+    }
+
+    // Ẩn thông báo yêu cầu quyền camera
+    function hideCameraPermissionRequest() {
+      document.getElementById('camera-check').classList.add('hidden');
+    }
+
+    // Khởi tạo kiểm tra camera khi trang tải
+    document.addEventListener('DOMContentLoaded', function() {
+      isCameraAvailable = checkCameraSupport();
+      
+      if (!isCameraAvailable) {
+        showCameraPermissionRequest();
+        document.getElementById('btn-scan-qr').disabled = true;
+        document.getElementById('btn-scan-qr').innerHTML = 
+          '<div class="flex items-center justify-center opacity-50">' +
+          '<svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">' +
+          '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>' +
+          '</svg>Camera không khả dụng</div>';
+      } else {
+        // Khởi tạo canvas cho jsQR
+        canvas = document.createElement('canvas');
+        canvasContext = canvas.getContext('2d', { willReadFrequently: true });
+      }
+    });
+
+    // Sự kiện cho nút bật camera
+    document.getElementById('btn-enable-camera').onclick = function() {
+      alert("Vui lòng kiểm tra:\n1. Trang web đang chạy trên HTTPS hoặc localhost\n2. Đã cho phép quyền camera trong trình duyệt\n3. Trình duyệt hỗ trợ WebRTC (Chrome, Firefox, Edge, Safari)");
+      location.reload();
+    };
 
     // ---------------------
     // LOGOUT
@@ -360,6 +438,11 @@
     // MENU NAVIGATION
     // ---------------------
     document.getElementById('btn-scan-qr').onclick = () => {
+      if (!isCameraAvailable) {
+        showCameraPermissionRequest();
+        return;
+      }
+      
       showSection('scan-section');
       startQRScanner();
     };
@@ -389,129 +472,138 @@
     }
 
     // ---------------------
-    // QR SCANNER using ZXing - SIMPLIFIED VERSION
+    // QR SCANNER using jsQR - ĐƠN GIẢN VÀ HIỆU QUẢ
     // ---------------------
     async function startQRScanner() {
       try {
         // Clear previous error messages
         document.getElementById('qr-info').innerHTML = '';
         
-        // Dừng scanner cũ nếu có
-        stopQRScanner();
-        
         // Hiển thị thông báo đang khởi động
         document.getElementById('qr-info').innerHTML = 
           '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">⏳ Đang khởi động camera với zoom 2x...</div>';
         
+        // Dừng scanner cũ nếu có
+        stopQRScanner();
+        
         // Lấy stream camera
         const constraints = {
           video: {
-            facingMode: currentCamera, // Sử dụng camera phía sau
-            width: { min: 1280, ideal: 1920, max: 2560 },
-            height: { min: 720, ideal: 1080, max: 1440 }
-          }
+            facingMode: currentCamera,
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
         };
         
-        qrStream = await navigator.mediaDevices.getUserMedia(constraints);
+        // Thử bắt đầu camera
+        try {
+          qrStream = await navigator.mediaDevices.getUserMedia(constraints);
+        } catch (err) {
+          console.error("Camera error:", err);
+          
+          // Thử lại với constraints đơn giản hơn
+          const simpleConstraints = {
+            video: true,
+            audio: false
+          };
+          
+          qrStream = await navigator.mediaDevices.getUserMedia(simpleConstraints);
+        }
         
         const videoElement = document.getElementById('videoElement');
         videoElement.srcObject = qrStream;
         
         // Đợi video sẵn sàng
         await new Promise((resolve) => {
-          videoElement.onloadedmetadata = () => {
+          if (videoElement.readyState >= 3) { // HAVE_FUTURE_DATA
             resolve();
-          };
+          } else {
+            videoElement.onloadeddata = () => {
+              resolve();
+            };
+            // Timeout sau 3 giây
+            setTimeout(resolve, 3000);
+          }
         });
         
         // Áp dụng zoom CSS
         videoElement.style.transform = 'scale(2)';
         videoElement.style.transformOrigin = 'center';
         
-        // Khởi tạo ZXing code reader
-        codeReader = new ZXing.BrowserQRCodeReader();
+        console.log("Bắt đầu quét QR với jsQR...");
         
-        console.log("ZXing QR Scanner đang khởi động...");
-        
-        // Bắt đầu quét QR với tần suất cao hơn
-        startContinuousScanning();
+        // Bắt đầu quét
+        scanningActive = true;
+        scanQRCode();
         
         document.getElementById('qr-info').innerHTML = 
           '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">✅ Camera đã sẵn sàng (Zoom 2x). Đưa QR code CCCD vào khung xanh.</div>';
         
+        hideCameraPermissionRequest();
+        
       } catch (error) {
         console.error("Failed to start QR scanner:", error);
-        showQRScanError(`Lỗi khởi động camera: ${error.message}`, true);
+        showQRScanError(`Lỗi khởi động camera: ${error.message}. Vui lòng kiểm tra quyền camera.`, true);
+        showCameraPermissionRequest();
       }
     }
 
-    // Hàm quét QR liên tục
-    async function startContinuousScanning() {
-      if (!codeReader) return;
+    // Hàm quét QR code sử dụng jsQR
+    function scanQRCode() {
+      if (!scanningActive || !qrStream) return;
       
       const videoElement = document.getElementById('videoElement');
-      const canvasElement = document.createElement('canvas');
-      const canvasContext = canvasElement.getContext('2d');
       
-      // Hàm quét một frame
-      async function scanFrame() {
-        if (!codeReader || isProcessingQR) return;
+      // Kiểm tra video đã sẵn sàng chưa
+      if (videoElement.readyState === videoElement.HAVE_ENOUGH_DATA) {
+        // Cập nhật kích thước canvas
+        canvas.width = videoElement.videoWidth;
+        canvas.height = videoElement.videoHeight;
         
-        try {
-          // Vẽ video frame lên canvas
-          canvasElement.width = videoElement.videoWidth;
-          canvasElement.height = videoElement.videoHeight;
-          canvasContext.drawImage(videoElement, 0, 0, canvasElement.width, canvasElement.height);
-          
-          // Lấy image data từ canvas
-          const imageData = canvasContext.getImageData(0, 0, canvasElement.width, canvasElement.height);
-          
-          // Giải mã QR code
-          const result = await codeReader.decodeFromImage(
-            null,
-            imageData,
-            {
-              tryHarder: true,
-              formats: [ZXing.BarcodeFormat.QR_CODE]
-            }
-          );
-          
-          if (result) {
-            console.log("QR detected:", result.text);
-            
-            // Dừng scanner tạm thời
-            stopQRScanner();
-            
-            // Xử lý QR code
-            await processQRCode(result.text);
-            return;
-          }
-        } catch (error) {
-          // Bỏ qua lỗi NotFoundException (không tìm thấy QR)
-          if (!(error instanceof ZXing.NotFoundException)) {
-            console.debug("Scan error:", error);
-          }
-        }
+        // Vẽ frame video lên canvas
+        canvasContext.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
         
-        // Tiếp tục quét frame tiếp theo
-        if (codeReader) {
-          requestAnimationFrame(scanFrame);
+        // Lấy dữ liệu hình ảnh từ canvas
+        const imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
+        
+        // Sử dụng jsQR để giải mã QR code
+        const code = jsQR(imageData.data, imageData.width, imageData.height, {
+          inversionAttempts: "dontInvert",
+        });
+        
+        // Nếu tìm thấy QR code
+        if (code) {
+          console.log("QR code detected:", code.data);
+          
+          // Dừng quét
+          scanningActive = false;
+          
+          // Xử lý QR code
+          processQRCode(code.data);
+          return;
         }
       }
       
-      // Bắt đầu quét
-      scanFrame();
+      // Tiếp tục quét nếu vẫn đang active
+      if (scanningActive) {
+        requestAnimationFrame(scanQRCode);
+      }
     }
 
     function stopQRScanner() {
-      if (codeReader) {
-        codeReader.reset();
-        codeReader = null;
-      }
+      scanningActive = false;
       
       if (qrStream) {
-        qrStream.getTracks().forEach(track => track.stop());
+        qrStream.getTracks().forEach(track => {
+          track.stop();
+        });
         qrStream = null;
+      }
+      
+      const videoElement = document.getElementById('videoElement');
+      if (videoElement) {
+        videoElement.srcObject = null;
       }
     }
 
@@ -562,7 +654,7 @@
         setTimeout(() => {
           console.log("Tự động reload scanner...");
           startQRScanner();
-        }, 2000);
+        }, 3000);
       }
     }
 
@@ -631,9 +723,10 @@
         const constraints = {
           video: { 
             facingMode: "environment",
-            width: { min: 1280, ideal: 1920, max: 2560 },
-            height: { min: 720, ideal: 1080, max: 1440 }
-          }
+            width: { ideal: 1280 },
+            height: { ideal: 720 }
+          },
+          audio: false
         };
 
         stream = await navigator.mediaDevices.getUserMedia(constraints);
