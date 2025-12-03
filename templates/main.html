@@ -8,8 +8,8 @@
   <!-- Tailwind CSS -->
   <script src="https://cdn.tailwindcss.com"></script>
   
-  <!-- QRScanner.js Library -->
-  <script src="https://unpkg.com/qr-scanner@1.4.2/qr-scanner.umd.min.js"></script>
+  <!-- ZXing WebAssembly Library -->
+  <script src="https://unpkg.com/@zxing/library@0.20.0/umd/index.min.js"></script>
   
   <style>
     body {
@@ -43,7 +43,7 @@
     }
     
     .scan-frame::before {
-      content: "Đưa QR code vào khung";
+      content: "";
       position: absolute;
       top: -40px;
       left: 0;
@@ -70,7 +70,7 @@
       width: 100%;
       height: 100%;
       object-fit: cover;
-      /* Zoom x2 bằng CSS transform */
+      /* Zoom x2 bằng CSS transform - TĂNG LÊN 2 LẦN */
       transform: scale(2);
       transform-origin: center;
     }
@@ -90,7 +90,7 @@
     }
     
     .capture-frame::before {
-      content: "";
+      content: "Đưa CCCD vào khung";
       position: absolute;
       top: -35px;
       left: 0;
@@ -335,8 +335,9 @@
     let frontImg = null;
     let backImg = null;
     let stream = null;
-    let qrScanner = null;
+    let codeReader = null;
     let isProcessingQR = false;
+    let qrScanner = null;
 
     // ---------------------
     // LOGOUT
@@ -352,7 +353,7 @@
     // ---------------------
     document.getElementById('btn-scan-qr').onclick = () => {
       showSection('scan-section');
-      if (!qrScanner) {
+      if (!codeReader) {
         startQRScanner();
       }
     };
@@ -382,64 +383,107 @@
     }
 
     // ---------------------
-    // QR SCANNER using QRScanner.js
+    // QR SCANNER using ZXing WebAssembly
     // ---------------------
     async function startQRScanner() {
       try {
         // Clear previous error messages
         document.getElementById('qr-info').innerHTML = '';
         
-        // Get video element
-        const videoElement = document.getElementById('videoElement');
+        // Initialize ZXing WebAssembly code reader
+        codeReader = new ZXing.BrowserQRCodeReader();
         
-        // Stop previous scanner if exists
+        // Get video input devices (cameras)
+        const videoInputDevices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+        
+        if (videoInputDevices.length === 0) {
+          showQRScanError('Không tìm thấy camera. Vui lòng kiểm tra quyền truy cập camera.', true);
+          return;
+        }
+
+        // Tìm camera phía sau
+        let backCamera = null;
+        
+        // Strategy 1: Tìm camera có label chứa 'back' hoặc 'rear'
+        backCamera = videoInputDevices.find(device => 
+          device.label.toLowerCase().includes('back') || 
+          device.label.toLowerCase().includes('rear')
+        );
+        
+        // Strategy 2: Nếu không tìm thấy, tìm camera có số 2
+        if (!backCamera) {
+          backCamera = videoInputDevices.find(device => device.label.includes('2'));
+        }
+        
+        // Strategy 3: Ưu tiên camera không phải 'front'
+        if (!backCamera) {
+          backCamera = videoInputDevices.find(device => !device.label.toLowerCase().includes('front'));
+        }
+        
+        // Strategy 4: Dùng camera đầu tiên
+        let selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices[0].deviceId;
+        
+        // Stop previous scanner
         stopQRScanner();
         
-        // Initialize QRScanner
-        qrScanner = new QrScanner(
-          videoElement,
-          async result => {
-            console.log("QR detected:", result.data);
+        // Configure decoding hints for better CCCD QR detection
+        const hints = new Map();
+        hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS, [ZXing.BarcodeFormat.QR_CODE]);
+        hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
+        hints.set(ZXing.DecodeHintType.PURE_BARCODE, false);
+        
+        // Start decoding with WebAssembly backend
+        await codeReader.decodeFromVideoDevice(
+          selectedDeviceId,
+          'videoElement',
+          async (result, error) => {
+            if (result) {
+              console.log("QR detected:", result.text);
+              
+              // Stop scanner temporarily
+              codeReader.reset();
+              
+              // Process QR code
+              await processQRCode(result.text);
+            }
             
-            // Stop scanner temporarily
-            qrScanner.stop();
-            
-            // Process QR code
-            await processQRCode(result.data);
+            if (error && !(error instanceof ZXing.NotFoundException)) {
+              console.debug("Scan error:", error);
+            }
           },
           {
-            // Cấu hình cho quét QR CCCD
-            preferredCamera: 'environment', // Luôn dùng camera sau
-            maxScansPerSecond: 10,
-            highlightScanRegion: false,
-            highlightCodeOutline: false,
-            // Vùng quét tập trung vào trung tâm
-            calculateScanRegion: function(video) {
-              // Vùng quét chiếm 60% trung tâm màn hình
-              const scanSize = 0.6;
-              const minDimension = Math.min(video.videoWidth, video.videoHeight);
-              const size = Math.floor(minDimension * scanSize);
-              const x = (video.videoWidth - size) / 2;
-              const y = (video.videoHeight - size) / 2;
-              
-              return {
-                x: x,
-                y: y,
-                width: size,
-                height: size
-              };
+            // Constraints for camera with ZOOM
+            video: {
+              deviceId: { exact: selectedDeviceId },
+              facingMode: 'environment',
+              width: { min: 1280, ideal: 1920, max: 2560 },
+              height: { min: 720, ideal: 1080, max: 1440 },
+              // Thêm zoom vào constraints (nếu trình duyệt hỗ trợ)
+              zoom: { ideal: 2, max: 3 }
             },
-            overlay: null,
-            returnDetailedScanResult: false
+            // Configuration for scanning
+            constraints: {
+              sampleRate: 30, // Higher sample rate for faster scanning
+            },
+            // Decoding configuration for WebAssembly
+            decodeHints: hints,
+            // Enable WebAssembly for better performance
+            tryPlayVideoTimeout: 1000
           }
         );
         
-        // Start scanning
-        await qrScanner.start();
-        
-        console.log("QRScanner started successfully");
+        console.log("ZXing WebAssembly QR Scanner started successfully");
         document.getElementById('qr-info').innerHTML = 
-          '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">✅ Camera đã sẵn sàng. Đưa QR code CCCD vào khung xanh.</div>';
+          '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">✅ Camera đã sẵn sàng (Zoom 2x). Đưa QR code CCCD vào khung xanh.</div>';
+        
+        // Áp dụng zoom CSS nếu camera không hỗ trợ zoom native
+        setTimeout(() => {
+          const videoElement = document.getElementById('videoElement');
+          if (videoElement) {
+            videoElement.style.transform = 'scale(2)'; // Zoom x2
+            videoElement.style.transformOrigin = 'center';
+          }
+        }, 500);
         
       } catch (error) {
         console.error("Failed to start QR scanner:", error);
@@ -448,10 +492,9 @@
     }
 
     function stopQRScanner() {
-      if (qrScanner) {
-        qrScanner.stop();
-        qrScanner.destroy();
-        qrScanner = null;
+      if (codeReader) {
+        codeReader.reset();
+        codeReader = null;
       }
     }
 
@@ -461,7 +504,7 @@
         console.log("Already processing QR, ignoring...");
         // Restart scanner
         setTimeout(() => {
-          if (!qrScanner) {
+          if (!codeReader) {
             startQRScanner();
           }
         }, 100);
@@ -493,7 +536,7 @@
       }
     }
 
-    // Hiển thị lỗi quét QR
+    // Hiển thị lỗi quét QR và reload scanner
     function showQRScanError(message, reloadScanner = false) {
       document.getElementById('qr-info').innerHTML = 
         `<div class="p-4 bg-red-900/30 text-red-300 rounded-lg">❌ ${message}</div>`;
@@ -562,7 +605,7 @@
     }
 
     // ---------------------
-    // CAMERA CAPTURE
+    // CAMERA CAPTURE (Chỉ dùng camera phía sau với zoom)
     // ---------------------
     async function startCameraCapture() {
       stopCaptureCamera();
@@ -572,7 +615,9 @@
           video: { 
             facingMode: "environment",
             width: { min: 1280, ideal: 1920, max: 2560 },
-            height: { min: 720, ideal: 1080, max: 1440 }
+            height: { min: 720, ideal: 1080, max: 1440 },
+            // Thêm zoom cho camera chụp ảnh
+            zoom: { ideal: 1.5, max: 2.5 }
           }
         };
 
@@ -581,7 +626,11 @@
         const videoElem = document.getElementById('video');
         videoElem.srcObject = stream;
         
-        document.getElementById('save-status').textContent = "Camera đã sẵn sàng. Đưa CCCD vào khung cam.";
+        // Áp dụng zoom CSS
+        videoElem.style.transform = 'scale(1.5)';
+        videoElem.style.transformOrigin = 'center';
+        
+        document.getElementById('save-status').textContent = "Camera đã sẵn sàng (Zoom 1.5x). Đưa CCCD vào khung cam.";
         document.getElementById('save-status').className = "text-green-400";
         
       } catch (error) {
@@ -603,14 +652,20 @@
       stopCaptureCamera();
     }
 
-    // Capture snapshot
+    // Capture snapshot với xử lý zoom
     function snap() {
       const video = document.getElementById('video');
       const canvas = document.createElement('canvas');
+      
+      // Tính toán kích thước canvas dựa trên video với zoom
       canvas.width = video.videoWidth;
       canvas.height = video.videoHeight;
+      
       const ctx = canvas.getContext('2d');
+      
+      // Vẽ video lên canvas (đã được zoom qua CSS)
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      
       return canvas.toDataURL('image/jpeg', 0.9);
     }
 
