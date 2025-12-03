@@ -337,7 +337,6 @@
     let stream = null;
     let codeReader = null;
     let isProcessingQR = false;
-    let qrScanner = null;
 
     // ---------------------
     // LOGOUT
@@ -383,20 +382,29 @@
     }
 
     // ---------------------
-    // QR SCANNER using ZXing WebAssembly
+    // QR SCANNER using ZXing WebAssembly - FIXED VERSION
     // ---------------------
     async function startQRScanner() {
       try {
         // Clear previous error messages
         document.getElementById('qr-info').innerHTML = '';
         
-        // Initialize ZXing WebAssembly code reader
+        // Khởi tạo ZXing code reader
         codeReader = new ZXing.BrowserQRCodeReader();
         
-        // Get video input devices (cameras)
-        const videoInputDevices = await ZXing.BrowserCodeReader.listVideoInputDevices();
+        // Lấy danh sách camera sử dụng API trình duyệt trực tiếp
+        let devices = [];
+        try {
+          devices = await navigator.mediaDevices.enumerateDevices();
+        } catch (err) {
+          console.error("Error enumerating devices:", err);
+          showQRScanError('Không thể truy cập danh sách camera. Vui lòng kiểm tra quyền truy cập camera.', true);
+          return;
+        }
         
-        if (videoInputDevices.length === 0) {
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        
+        if (videoDevices.length === 0) {
           showQRScanError('Không tìm thấy camera. Vui lòng kiểm tra quyền truy cập camera.', true);
           return;
         }
@@ -405,23 +413,23 @@
         let backCamera = null;
         
         // Strategy 1: Tìm camera có label chứa 'back' hoặc 'rear'
-        backCamera = videoInputDevices.find(device => 
+        backCamera = videoDevices.find(device => 
           device.label.toLowerCase().includes('back') || 
           device.label.toLowerCase().includes('rear')
         );
         
         // Strategy 2: Nếu không tìm thấy, tìm camera có số 2
         if (!backCamera) {
-          backCamera = videoInputDevices.find(device => device.label.includes('2'));
+          backCamera = videoDevices.find(device => device.label.includes('2'));
         }
         
         // Strategy 3: Ưu tiên camera không phải 'front'
         if (!backCamera) {
-          backCamera = videoInputDevices.find(device => !device.label.toLowerCase().includes('front'));
+          backCamera = videoDevices.find(device => !device.label.toLowerCase().includes('front'));
         }
         
         // Strategy 4: Dùng camera đầu tiên
-        let selectedDeviceId = backCamera ? backCamera.deviceId : videoInputDevices[0].deviceId;
+        let selectedDeviceId = backCamera ? backCamera.deviceId : videoDevices[0].deviceId;
         
         // Stop previous scanner
         stopQRScanner();
@@ -432,16 +440,22 @@
         hints.set(ZXing.DecodeHintType.TRY_HARDER, true);
         hints.set(ZXing.DecodeHintType.PURE_BARCODE, false);
         
-        // Start decoding with WebAssembly backend
-        await codeReader.decodeFromVideoDevice(
+        // Hiển thị thông báo đang khởi động
+        document.getElementById('qr-info').innerHTML = 
+          '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">⏳ Đang khởi động camera với zoom 2x...</div>';
+        
+        // Sử dụng decodeFromVideoDeviceContinuously cho quét liên tục
+        codeReader.decodeFromVideoDevice(
           selectedDeviceId,
           'videoElement',
           async (result, error) => {
             if (result) {
               console.log("QR detected:", result.text);
               
-              // Stop scanner temporarily
-              codeReader.reset();
+              // Tạm dừng scanner
+              if (codeReader) {
+                codeReader.reset();
+              }
               
               // Process QR code
               await processQRCode(result.text);
@@ -454,36 +468,29 @@
           {
             // Constraints for camera with ZOOM
             video: {
-              deviceId: { exact: selectedDeviceId },
+              deviceId: selectedDeviceId,
               facingMode: 'environment',
               width: { min: 1280, ideal: 1920, max: 2560 },
-              height: { min: 720, ideal: 1080, max: 1440 },
-              // Thêm zoom vào constraints (nếu trình duyệt hỗ trợ)
-              zoom: { ideal: 2, max: 3 }
-            },
-            // Configuration for scanning
-            constraints: {
-              sampleRate: 30, // Higher sample rate for faster scanning
+              height: { min: 720, ideal: 1080, max: 1440 }
             },
             // Decoding configuration for WebAssembly
-            decodeHints: hints,
-            // Enable WebAssembly for better performance
-            tryPlayVideoTimeout: 1000
+            decodeHints: hints
           }
-        );
-        
-        console.log("ZXing WebAssembly QR Scanner started successfully");
-        document.getElementById('qr-info').innerHTML = 
-          '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">✅ Camera đã sẵn sàng (Zoom 2x). Đưa QR code CCCD vào khung xanh.</div>';
-        
-        // Áp dụng zoom CSS nếu camera không hỗ trợ zoom native
-        setTimeout(() => {
+        ).then(() => {
+          console.log("ZXing WebAssembly QR Scanner started successfully");
+          document.getElementById('qr-info').innerHTML = 
+            '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">✅ Camera đã sẵn sàng (Zoom 2x). Đưa QR code CCCD vào khung xanh.</div>';
+          
+          // Áp dụng zoom CSS
           const videoElement = document.getElementById('videoElement');
           if (videoElement) {
             videoElement.style.transform = 'scale(2)'; // Zoom x2
             videoElement.style.transformOrigin = 'center';
           }
-        }, 500);
+        }).catch(error => {
+          console.error("Failed to start QR scanner:", error);
+          showQRScanError(`Lỗi khởi động camera: ${error.message}`, true);
+        });
         
       } catch (error) {
         console.error("Failed to start QR scanner:", error);
@@ -615,9 +622,7 @@
           video: { 
             facingMode: "environment",
             width: { min: 1280, ideal: 1920, max: 2560 },
-            height: { min: 720, ideal: 1080, max: 1440 },
-            // Thêm zoom cho camera chụp ảnh
-            zoom: { ideal: 1.5, max: 2.5 }
+            height: { min: 720, ideal: 1080, max: 1440 }
           }
         };
 
