@@ -86,16 +86,6 @@ def init_db():
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
     
-    # Thêm user mẫu (không cần password)
-    cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
-                   ("admin", "Administrator", "admin"))
-    cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
-                   ("user1", "Người dùng 1", "user"))
-    cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
-                   ("user2", "Người dùng 2", "user"))
-    cursor.execute("INSERT IGNORE INTO users (username, fullname, role) VALUES (%s, %s, %s)", 
-                   ("staff", "Nhân viên", "staff"))
-    
     cursor.close()
     conn.close()
 
@@ -209,7 +199,7 @@ def login():
         # Nếu user không tồn tại, tạo mới
         if not user:
             cur.execute("INSERT INTO users (username, fullname) VALUES (%s, %s)", 
-                       (username, f"User {username}"))
+                       (username, username))
             conn.commit()
             
             # Lấy lại thông tin user vừa tạo
@@ -243,42 +233,6 @@ def login():
 def logout():
     session.clear()
     return redirect(url_for('login'))
-
-# 1) VERIFY USER
-@app.route("/verify_user", methods=["POST"])
-def verify_user():
-    try:
-        data = request.json
-        username = data.get("username", "").strip()
-        
-        if not username:
-            return jsonify({"ok": False, "msg": "Username không được để trống"}), 400
-        
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        cur.execute("SELECT id, username, fullname FROM users WHERE username = %s", (username,))
-        user = cur.fetchone()
-        
-        cur.close()
-        conn.close()
-        
-        if user:
-            return jsonify({
-                "ok": True, 
-                "msg": "User tồn tại",
-                "user": {
-                    "id": user[0],
-                    "username": user[1],
-                    "fullname": user[2]
-                }
-            })
-        else:
-            return jsonify({"ok": False, "msg": "User không tồn tại"}), 404
-            
-    except Exception as e:
-        app.logger.error(f"Verify user error: {str(e)}")
-        return jsonify({"ok": False, "error": str(e)}), 500
 
 # 2) QUÉT QR
 @app.route("/scan_qr_image", methods=["POST"])
@@ -506,22 +460,6 @@ def serve_image(filename):
     except Exception as e:
         app.logger.error(f"Serve image error: {str(e)}")
         return jsonify({"ok": False, "error": "Không tìm thấy ảnh"}), 404
-
-# 8) GET ALL USERS (for debugging)
-@app.route("/users", methods=["GET"])
-def get_users():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor(dictionary=True)
-        cur.execute("SELECT id, username, fullname, role, created_at FROM users ORDER BY username")
-        users = cur.fetchall()
-        cur.close()
-        conn.close()
-        
-        return jsonify({"ok": True, "users": users})
-    except Exception as e:
-        app.logger.error(f"Get users error: {str(e)}")
-        return jsonify({"ok": False, "error": str(e)}), 500
 
 # -------------------------
 if __name__ == "__main__":
