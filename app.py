@@ -272,16 +272,17 @@ def scan_qr_image():
                 qr = cv2.QRCodeDetector()
                 text, pts, _ = qr.detectAndDecode(img)
                 
-                if not text:
-                    # Thử thêm với adaptive threshold
-                    img_thresh = cv2.adaptiveThreshold(img, 255, 
-                        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-                    text, pts, _ = qr.detectAndDecode(img_thresh)
-                
                 if text:
                     parsed, error_msg = parse_qr_text(text)
                 else:
-                    error_msg = "Không tìm thấy QR code trong ảnh"
+                    # Thử thêm với adaptive threshold
+                    img_thresh = cv2.adaptiveThreshold(img, 255, 
+                        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+                    text2, pts2, _ = qr.detectAndDecode(img_thresh)
+                    if text2:
+                        parsed, error_msg = parse_qr_text(text2)
+                    else:
+                        error_msg = "Không tìm thấy QR code trong ảnh"
             except Exception as img_error:
                 app.logger.error(f"Image decode error: {img_error}")
                 error_msg = "Lỗi xử lý ảnh"

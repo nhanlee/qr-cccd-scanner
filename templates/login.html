@@ -1,144 +1,98 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Đăng nhập - QR CCCD Scanner</title>
-  
-  <!-- Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  
-  <style>
-    body {
-      background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
-    }
-    
-    .login-card {
-      background: rgba(255, 255, 255, 0.05);
-      backdrop-filter: blur(10px);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      border-radius: 20px;
-      width: 100%;
-      max-width: 400px;
-    }
-    
-    .login-input {
-      background: rgba(255, 255, 255, 0.08);
-      border: 1px solid rgba(255, 255, 255, 0.2);
-      transition: all 0.3s ease;
-    }
-    
-    .login-input:focus {
-      background: rgba(255, 255, 255, 0.12);
-      border-color: #3b82f6;
-      box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-    }
-  </style>
-</head>
-<body>
-  <div class="login-card p-8">
-    <!-- Logo/Header -->
-    <div class="text-center mb-8">
-      <div class="inline-flex items-center justify-center w-16 h-16 bg-gradient-to-br from-blue-500 to-purple-600 rounded-2xl mb-4">
-        <svg xmlns="http://www.w3.org/2000/svg" class="h-8 w-8 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" />
-        </svg>
-      </div>
-      <h1 class="text-2xl font-bold text-white">QR CCCD Scanner</h1>
-    </div>
-    
-    <!-- Login Form -->
-    <form id="loginForm">
-      <div class="space-y-4">
-        <div>
-          <label class="block text-sm font-medium text-slate-300 mb-2">Tên đăng nhập</label>
-          <input type="text" id="username" 
-                 class="login-input w-full px-4 py-3 rounded-lg text-white placeholder-slate-500 focus:outline-none"
-                 placeholder="Nhập username..." 
-                 autocomplete="username"
-                 required
-                 autofocus>
-        </div>
-        
-        <div id="login-status" class="text-sm text-center min-h-6"></div>
-        
-        <button type="submit" id="btn-login"
-                class="w-full py-3 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-lg hover:from-blue-700 hover:to-indigo-700 transition-all duration-300 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2 focus:ring-offset-slate-900">
-          Đăng nhập
-        </button>
-        
-        <div class="text-center text-sm text-slate-400 pt-4">
-          <p class="text-xs">Vui lòng nhập username hợp lệ để sử dụng hệ thống</p>
-        </div>
-      </div>
-    </form>
-  </div>
-
-  <script>
-    document.getElementById('loginForm').addEventListener('submit', async function(e) {
-      e.preventDefault();
-      
-      const username = document.getElementById('username').value.trim();
-      const loginStatus = document.getElementById('login-status');
-      
-      if (!username) {
-        loginStatus.innerHTML = '<p class="text-red-400">Vui lòng nhập username</p>';
-        return;
-      }
-      
-      // Thay đổi trạng thái nút
-      const btnLogin = document.getElementById('btn-login');
-      const originalText = btnLogin.textContent;
-      btnLogin.textContent = 'Đang đăng nhập...';
-      btnLogin.disabled = true;
-      
-      loginStatus.innerHTML = '<p class="text-yellow-400">Đang kiểm tra tài khoản...</p>';
-      
-      try {
-        const response = await fetch('/login', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({ username })
-        });
-        
-        const result = await response.json();
-        
-        if (result.ok) {
-          loginStatus.innerHTML = '<p class="text-green-400">Đăng nhập thành công! Đang chuyển hướng...</p>';
-          
-          // Chuyển hướng sau 1 giây
-          setTimeout(() => {
-            window.location.href = '/';
-          }, 1000);
-        } else {
-          loginStatus.innerHTML = `<p class="text-red-400">${result.msg || 'Đăng nhập thất bại'}</p>`;
-          btnLogin.textContent = originalText;
-          btnLogin.disabled = false;
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Đăng nhập - QR CCCD Scanner</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+            min-height: 100vh;
         }
-      } catch (error) {
-        console.error('Login error:', error);
-        loginStatus.innerHTML = '<p class="text-red-400">Lỗi kết nối máy chủ</p>';
-        btnLogin.textContent = originalText;
-        btnLogin.disabled = false;
-      }
-    });
+        .login-card {
+            background: rgba(255, 255, 255, 0.05);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+    </style>
+</head>
+<body class="flex items-center justify-center p-4">
+    <div class="login-card w-full max-w-md p-8 rounded-2xl shadow-2xl">
+        <div class="text-center mb-8">
+            <h1 class="text-3xl font-bold text-white mb-2">QR CCCD Scanner</h1>
+            <p class="text-slate-400">Đăng nhập để sử dụng hệ thống</p>
+        </div>
+        
+        <div id="login-error" class="mb-4 p-3 bg-red-900/30 text-red-300 rounded-lg hidden"></div>
+        
+        <div class="space-y-4">
+            <div>
+                <label class="block text-sm font-medium text-slate-300 mb-2">Tên đăng nhập</label>
+                <input type="text" id="username" 
+                       class="w-full p-3 rounded-lg bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                       placeholder="Nhập username">
+            </div>
+            
+            <button id="btn-login" 
+                    class="w-full py-3 bg-blue-600 hover:bg-blue-700 text-white font-medium rounded-lg transition-colors">
+                Đăng nhập
+            </button>
+            
+            <div class="mt-6 pt-6 border-t border-slate-700 text-center">
+                <p class="text-sm text-slate-400">
+                    Hệ thống quét và lưu trữ thông tin CCCD qua QR code
+                </p>
+            </div>
+        </div>
+    </div>
 
-    // Cho phép nhấn Enter để đăng nhập
-    document.getElementById('username').addEventListener('keypress', function(e) {
-      if (e.key === 'Enter') {
-        document.getElementById('loginForm').dispatchEvent(new Event('submit'));
-      }
-    });
-
-    // Tự động focus vào input username
-    document.getElementById('username').focus();
-  </script>
+    <script>
+        document.getElementById('btn-login').onclick = async () => {
+            const username = document.getElementById('username').value.trim();
+            const errorDiv = document.getElementById('login-error');
+            
+            if (!username) {
+                errorDiv.textContent = "Vui lòng nhập username";
+                errorDiv.classList.remove('hidden');
+                return;
+            }
+            
+            errorDiv.classList.add('hidden');
+            document.getElementById('btn-login').disabled = true;
+            document.getElementById('btn-login').innerHTML = 
+                '<span class="flex items-center justify-center">⏳ Đang đăng nhập...</span>';
+            
+            try {
+                const res = await fetch("/login", {
+                    method: "POST",
+                    headers: {"Content-Type": "application/json"},
+                    body: JSON.stringify({ username: username })
+                });
+                
+                const result = await res.json();
+                
+                if (result.ok) {
+                    window.location.href = "/";
+                } else {
+                    errorDiv.textContent = result.msg || "Đăng nhập thất bại";
+                    errorDiv.classList.remove('hidden');
+                }
+            } catch (error) {
+                errorDiv.textContent = "Lỗi kết nối server";
+                errorDiv.classList.remove('hidden');
+            } finally {
+                document.getElementById('btn-login').disabled = false;
+                document.getElementById('btn-login').innerHTML = "Đăng nhập";
+            }
+        };
+        
+        // Enter key support
+        document.getElementById('username').addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                document.getElementById('btn-login').click();
+            }
+        });
+    </script>
 </body>
 </html>
