@@ -260,9 +260,23 @@ def scan_qr_image():
                 img_bytes = base64.b64decode(encoded)
 
                 img_array = np.frombuffer(img_bytes, np.uint8)
-                img = cv2.imdecode(img_array, cv2.IMREAD_COLOR)
+                img = cv2.imdecode(img_array, cv2.IMREAD_GRAYSCALE)  # Chuyển sang grayscale
+                
+                # Tăng độ tương phản
+                img = cv2.convertScaleAbs(img, alpha=1.3, beta=20)
+                
+                # Làm sắc nét
+                kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
+                img = cv2.filter2D(img, -1, kernel)
+                
                 qr = cv2.QRCodeDetector()
                 text, pts, _ = qr.detectAndDecode(img)
+                
+                if not text:
+                    # Thử thêm với adaptive threshold
+                    img_thresh = cv2.adaptiveThreshold(img, 255, 
+                        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
+                    text, pts, _ = qr.detectAndDecode(img_thresh)
                 
                 if text:
                     parsed, error_msg = parse_qr_text(text)
