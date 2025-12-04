@@ -18,6 +18,7 @@
       min-height: 100vh;
     }
     
+    /* Overlay styles */
     .camera-overlay {
       position: relative;
       width: 100%;
@@ -40,10 +41,32 @@
       pointer-events: none;
     }
     
-    #videoElement {
+    /* Hiệu ứng scan line */
+    .scan-frame::after {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
       width: 100%;
-      height: 100%;
+      height: 3px;
+      background: linear-gradient(90deg, transparent, #10b981, transparent);
+      animation: scanLine 2s linear infinite;
+    }
+    
+    @keyframes scanLine {
+      0% { top: 0; }
+      100% { top: 100%; }
+    }
+    
+    /* ZOOM 2x cho video QR */
+    #videoElement {
+      width: 200%;  /* Zoom x2 bằng cách tăng kích thước */
+      height: 200%;
       object-fit: cover;
+      position: absolute;
+      left: -50%;   /* Căn giữa khi zoom 2x */
+      top: -50%;
+      transform: none !important; /* Ghi đè transform từ JS nếu có */
     }
     
     .capture-frame {
@@ -133,6 +156,20 @@
       transform: translateY(-2px);
       box-shadow: 0 10px 20px rgba(239, 68, 68, 0.3);
     }
+    
+    /* Thông báo zoom */
+    .zoom-indicator {
+      position: absolute;
+      top: 10px;
+      right: 10px;
+      background: rgba(0, 0, 0, 0.7);
+      color: #10b981;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      z-index: 20;
+      font-weight: bold;
+    }
   </style>
 </head>
 <body class="p-4">
@@ -161,7 +198,7 @@
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
               </svg>
-              Quét QR CCCD
+              Quét QR CCCD (Zoom 2x)
             </div>
           </button>
           
@@ -178,9 +215,10 @@
             <h3 class="text-sm font-medium text-slate-300 mb-2">Hướng dẫn</h3>
             <ul class="text-sm text-slate-400 space-y-2">
               <li>1. Chọn "Quét QR CCCD"</li>
-              <li>2. Đưa QR code vào khung xanh</li>
-              <li>3. Chụp ảnh mặt trước/sau CCCD</li>
-              <li>4. Nhập số điện thoại và lưu</li>
+              <li>2. Đưa QR code vào khung xanh (Zoom 2x)</li>
+              <li>3. Camera sẽ tự động nhận diện QR</li>
+              <li>4. Chụp ảnh mặt trước/sau CCCD</li>
+              <li>5. Nhập số điện thoại và lưu</li>
             </ul>
           </div>
         </div>
@@ -192,7 +230,9 @@
       <!-- QR Scanning Section -->
       <div id="scan-section" class="hidden">
         <div class="card p-6">
-          <h2 class="text-xl font-semibold text-white mb-4">Quét QR CCCD</h2>
+          <h2 class="text-xl font-semibold text-white mb-4">
+            Quét QR CCCD <span class="text-green-400 text-sm">(Zoom 2x)</span>
+          </h2>
           
           <div id="camera-check" class="mb-4 p-4 bg-yellow-900/30 text-yellow-300 rounded-lg hidden">
             <p class="font-semibold">⚠️ Yêu cầu quyền truy cập camera</p>
@@ -205,16 +245,25 @@
           <div class="camera-overlay mb-4">
             <video id="videoElement" autoplay playsinline></video>
             <div class="scan-frame"></div>
+            <div class="zoom-indicator">ZOOM 2x</div>
           </div>
           
-          <div id="qr-info" class="text-sm text-slate-200"></div>
+          <div id="qr-info" class="text-sm text-slate-200 mb-4"></div>
           
-          <!-- Debug Info -->
-          <div id="debug-info" class="mt-2 text-xs text-slate-400 hidden"></div>
+          <!-- Camera Status -->
+          <div id="camera-status" class="p-3 bg-blue-900/30 text-blue-300 rounded-lg hidden">
+            <div class="flex items-center">
+              <div class="w-3 h-3 bg-green-500 rounded-full mr-2 animate-pulse"></div>
+              <span>Camera đang hoạt động (Zoom 2x)</span>
+            </div>
+          </div>
           
-          <div class="mt-4 text-center">
+          <div class="mt-4 flex gap-3 justify-center">
             <button id="btn-switch-camera" class="px-4 py-2 bg-slate-700 hover:bg-slate-600 rounded-lg transition-colors text-sm">
               Chuyển camera
+            </button>
+            <button id="btn-test-qr" class="px-4 py-2 bg-purple-700 hover:bg-purple-600 rounded-lg transition-colors text-sm hidden">
+              Test QR
             </button>
           </div>
         </div>
@@ -309,8 +358,7 @@
   </main>
 
   <script>
-    // ========== SIMPLE VERSION ==========
-    // Focus on basic functionality first
+    // ========== SIMPLE VERSION WITH ZOOM 2x ==========
     
     let currentUser = "{{ username }}";
     let parsedQR = null;
@@ -322,6 +370,7 @@
     let currentCamera = 'environment';
     let canvas = null;
     let canvasContext = null;
+    let isZoomed = true; // Mặc định bật zoom 2x
 
     // ========== INIT ==========
     document.addEventListener('DOMContentLoaded', function() {
@@ -375,21 +424,24 @@
       }
     }
 
-    // ========== QR SCANNER - SIMPLE ==========
+    // ========== QR SCANNER VỚI ZOOM 2x ==========
     async function startQRScanner() {
       try {
         document.getElementById('qr-info').innerHTML = 
-          '<div class="p-3 bg-blue-900/30 text-blue-300 rounded-lg">⏳ Đang khởi động camera...</div>';
+          '<div class="p-3 bg-blue-900/30 text-blue-300 rounded-lg">⏳ Đang khởi động camera với ZOOM 2x...</div>';
+        
+        document.getElementById('camera-status').classList.remove('hidden');
         
         // Stop previous stream
         stopQRScanner();
         
-        // Get camera stream
+        // Get camera stream với chất lượng cao cho zoom
         const constraints = {
           video: {
             facingMode: currentCamera,
-            width: { ideal: 1280 },
-            height: { ideal: 720 }
+            width: { ideal: 1920, min: 1280 },  // Độ phân giải cao
+            height: { ideal: 1080, min: 720 },
+            frameRate: { ideal: 30, min: 24 }
           },
           audio: false
         };
@@ -408,15 +460,18 @@
           }
         });
         
+        // Áp dụng zoom 2x bằng CSS
+        applyZoom2x(videoElement);
+        
         // Hide permission request
         document.getElementById('camera-check').classList.add('hidden');
         
-        // Start scanning
+        // Start scanning với xử lý ảnh nâng cao
         scanningActive = true;
         scanQRCode();
         
         document.getElementById('qr-info').innerHTML = 
-          '<div class="p-3 bg-green-900/30 text-green-300 rounded-lg">✅ Camera đã sẵn sàng. Đưa QR code CCCD vào khung.</div>';
+          '<div class="p-3 bg-green-900/30 text-green-300 rounded-lg">✅ Camera đã sẵn sàng (ZOOM 2x). Đưa QR code CCCD vào khung xanh.</div>';
         
       } catch (error) {
         console.error('Camera error:', error);
@@ -424,6 +479,43 @@
           `<div class="p-3 bg-red-900/30 text-red-300 rounded-lg">❌ Lỗi camera: ${error.message}</div>`;
         document.getElementById('camera-check').classList.remove('hidden');
       }
+    }
+
+    // Áp dụng zoom 2x cho video
+    function applyZoom2x(videoElement) {
+      // CSS đã được định nghĩa: width: 200%, height: 200%, left: -50%, top: -50%
+      // Đảm bảo không có transform nào ghi đè
+      videoElement.style.transform = 'none';
+      videoElement.style.width = '200%';
+      videoElement.style.height = '200%';
+      videoElement.style.left = '-50%';
+      videoElement.style.top = '-50%';
+      videoElement.style.position = 'absolute';
+      videoElement.style.objectFit = 'cover';
+    }
+
+    // Hàm xử lý ảnh để tăng độ tương phản cho QR dễ đọc
+    function enhanceImageForQR(imageData) {
+      const data = imageData.data;
+      const length = data.length;
+      
+      // Tăng độ tương phản
+      const contrast = 1.5;
+      const brightness = 20;
+      
+      for (let i = 0; i < length; i += 4) {
+        // RGB
+        data[i] = contrast * (data[i] - 128) + 128 + brightness;   // R
+        data[i + 1] = contrast * (data[i + 1] - 128) + 128 + brightness; // G
+        data[i + 2] = contrast * (data[i + 2] - 128) + 128 + brightness; // B
+        
+        // Clamp values
+        data[i] = Math.min(255, Math.max(0, data[i]));
+        data[i + 1] = Math.min(255, Math.max(0, data[i + 1]));
+        data[i + 2] = Math.min(255, Math.max(0, data[i + 2]));
+      }
+      
+      return imageData;
     }
 
     function scanQRCode() {
@@ -436,21 +528,35 @@
         canvas.width = videoElement.videoWidth;
         canvas.height = videoElement.videoHeight;
         
-        // Draw video frame to canvas
-        canvasContext.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+        // Vì đang zoom 2x, chúng ta sẽ crop phần trung tâm (vùng khung scan)
+        // Tính toán vùng crop: lấy 50% ở giữa (tương ứng với zoom 2x)
+        const cropWidth = canvas.width / 2;
+        const cropHeight = canvas.height / 2;
+        const cropX = (canvas.width - cropWidth) / 2;
+        const cropY = (canvas.height - cropHeight) / 2;
         
-        // Get image data
-        const imageData = canvasContext.getImageData(0, 0, canvas.width, canvas.height);
+        // Draw video frame to canvas (chỉ vùng crop)
+        canvasContext.drawImage(videoElement, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
+        
+        // Get image data từ vùng đã crop
+        const imageData = canvasContext.getImageData(0, 0, cropWidth, cropHeight);
+        
+        // Tăng cường chất lượng ảnh để dễ đọc QR
+        const enhancedImage = enhanceImageForQR(imageData);
         
         // Try to decode QR code
         try {
-          const code = jsQR(imageData.data, imageData.width, imageData.height, {
-            inversionAttempts: "dontInvert",
+          const code = jsQR(enhancedImage.data, enhancedImage.width, enhancedImage.height, {
+            inversionAttempts: "both",  // Thử cả đảo ngược
           });
           
           if (code) {
             console.log('QR found:', code.data);
             scanningActive = false;
+            
+            // Hiệu ứng visual khi tìm thấy QR
+            showQRDetectedEffect();
+            
             processQRCode(code.data);
             return;
           }
@@ -459,10 +565,22 @@
         }
       }
       
-      // Continue scanning
+      // Continue scanning với tốc độ 15fps (để giảm CPU)
       if (scanningActive) {
-        requestAnimationFrame(scanQRCode);
+        setTimeout(scanQRCode, 66); // ~15 FPS
       }
+    }
+
+    // Hiệu ứng khi phát hiện QR
+    function showQRDetectedEffect() {
+      const scanFrame = document.querySelector('.scan-frame');
+      scanFrame.style.borderColor = '#00ff00';
+      scanFrame.style.boxShadow = '0 0 20px #00ff00';
+      
+      setTimeout(() => {
+        scanFrame.style.borderColor = '#10b981';
+        scanFrame.style.boxShadow = 'none';
+      }, 1000);
     }
 
     function stopQRScanner() {
@@ -475,6 +593,7 @@
       if (videoElement) {
         videoElement.srcObject = null;
       }
+      document.getElementById('camera-status').classList.add('hidden');
     }
 
     // Switch camera
@@ -512,26 +631,26 @@
         // Display QR data
         document.getElementById('qr-data').innerHTML = `
           <div class="grid grid-cols-2 gap-2">
-            <div><b>CCCD mới:</b></div>
+            <div><b class="text-slate-300">CCCD mới:</b></div>
             <div class="text-blue-400 font-mono">${parsedQR.cccd_moi || 'N/A'}</div>
             
-            <div><b>CMND cũ:</b></div>
+            <div><b class="text-slate-300">CMND cũ:</b></div>
             <div>${parsedQR.cmnd_cu || 'N/A'}</div>
             
-            <div><b>Tên:</b></div>
-            <div class="font-semibold">${parsedQR.name || 'N/A'}</div>
+            <div><b class="text-slate-300">Tên:</b></div>
+            <div class="font-semibold text-white">${parsedQR.name || 'N/A'}</div>
             
-            <div><b>Ngày sinh:</b></div>
+            <div><b class="text-slate-300">Ngày sinh:</b></div>
             <div>${parsedQR.dob || 'N/A'}</div>
             
-            <div><b>Giới tính:</b></div>
+            <div><b class="text-slate-300">Giới tính:</b></div>
             <div>${parsedQR.gender || 'N/A'}</div>
             
-            <div><b>Địa chỉ:</b></div>
+            <div><b class="text-slate-300">Địa chỉ:</b></div>
             <div class="col-span-1 text-sm">${parsedQR.address || 'N/A'}</div>
           </div>
           <div class="mt-3 p-2 rounded ${result.duplicate ? 'bg-red-900/30 text-red-300' : 'bg-green-900/30 text-green-300'}">
-            ${result.duplicate ? '⚠️ CCCD đã tồn tại' : '✅ QR hợp lệ - chưa có trong hệ thống'}
+            ${result.duplicate ? '⚠️ CCCD đã tồn tại trong hệ thống' : '✅ QR hợp lệ - chưa có trong hệ thống'}
           </div>
         `;
         
@@ -552,7 +671,7 @@
       }
     }
 
-    // ========== CAMERA CAPTURE ==========
+    // ========== CAMERA CAPTURE (Không zoom) ==========
     async function startCameraCapture() {
       try {
         stopCaptureCamera();
@@ -664,7 +783,7 @@
     function updateStatus(result, imageType) {
       const status = document.getElementById('save-status');
       if (result.ok) {
-        status.textContent = `✅ Đã lưu ảnh ${imageType}`;
+        status.textContent = `✅ Đã lưu ảnh ${imageType}` + (result.face ? " (có ảnh khuôn mặt)" : "");
         status.className = "text-green-400";
       } else {
         status.textContent = `❌ Lỗi: ${result.error || "Không xác định"}`;
@@ -818,7 +937,7 @@
           const rowClass = index % 2 === 0 ? 'bg-slate-800/50' : 'bg-slate-900/50';
           
           let imgs = `
-            <div class="flex gap-1">
+            <div class="flex flex-wrap gap-1">
               <a href="/images/${r.front_image}" target="_blank" 
                  class="px-2 py-1 bg-blue-900/30 hover:bg-blue-900/50 rounded text-xs">
                 Mặt trước
@@ -834,11 +953,20 @@
             `;
           }
           
+          if (r.face_cropped) {
+            imgs += `
+              <a href="/images/${r.face_cropped}" target="_blank"
+                 class="px-2 py-1 bg-green-900/30 hover:bg-green-900/50 rounded text-xs">
+                Khuôn mặt
+              </a>
+            `;
+          }
+          
           imgs += '</div>';
 
           html += `
             <tr class="${rowClass}">
-              <td class="p-3 border-t border-slate-700 text-sm">${r.cccd_moi || 'N/A'}</td>
+              <td class="p-3 border-t border-slate-700 text-sm font-mono">${r.cccd_moi || 'N/A'}</td>
               <td class="p-3 border-t border-slate-700">${r.name || 'N/A'}</td>
               <td class="p-3 border-t border-slate-700">${r.dob || 'N/A'}</td>
               <td class="p-3 border-t border-slate-700">${r.phone || 'N/A'}</td>
