@@ -1,6 +1,5 @@
 import os
 import base64
-import json
 from datetime import datetime
 from PIL import Image
 from flask import Flask, render_template, request, jsonify, send_from_directory, redirect, url_for, session
@@ -83,9 +82,6 @@ def init_db():
         `front_image` VARCHAR(255),
         `back_image` VARCHAR(255),
         `face_cropped` VARCHAR(255),
-        `ethnicity` VARCHAR(100),
-        `religion` VARCHAR(100),
-        `hometown` VARCHAR(255),
         `created_at` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
     """)
@@ -94,18 +90,6 @@ def init_db():
     conn.close()
 
 init_db()
-
-# -------------------------
-# CITIZENID RECOGNITION
-# -------------------------
-try:
-    from citizenID_recognition import CitizenID
-    citizen_id_reader = CitizenID()
-    use_citizenid = True
-    app.logger.info("✅ Đã tải citizenID_recognition thành công")
-except ImportError as e:
-    use_citizenid = False
-    app.logger.warning(f"❌ Không thể tải citizenID_recognition: {e}")
 
 # -------------------------
 # YOLO FACE DETECTOR
@@ -143,90 +127,26 @@ def crop_face_using_yolo(img_path, save_path):
         return False
 
 # -------------------------
-# HELPERS: PARSE QR với citizenID_recognition
+# HELPERS: PARSE QR
 # -------------------------
-def parse_cccd_with_citizenid(image_data):
-    """Parse CCCD QR code using citizenID_recognition library"""
-    if not use_citizenid:
-        return None, "citizenID_recognition không khả dụng"
-    
-    try:
-        # Decode base64 image
-        if "," in image_data:
-            image_data = image_data.split(",")[1]
-        
-        # Convert base64 to image file
-        import tempfile
-        import uuid
-        
-        # Tạo file tạm
-        temp_filename = f"/tmp/{uuid.uuid4()}.jpg"
-        with open(temp_filename, "wb") as f:
-            f.write(base64.b64decode(image_data))
-        
-        # Sử dụng citizenID_recognition để đọc CCCD
-        result = citizen_id_reader.recognition(temp_filename)
-        
-        # Xóa file tạm
-        try:
-            os.remove(temp_filename)
-        except:
-            pass
-        
-        app.logger.info(f"CitizenID Recognition result: {result}")
-        
-        if not result or 'id' not in result:
-            return None, "Không thể đọc thông tin từ CCCD"
-        
-        # Parse date formats
-        def parse_date(date_str):
-            if not date_str:
-                return None
-            for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
-                try:
-                    return datetime.strptime(date_str, fmt).date()
-                except:
-                    continue
-            return None
-        
-        # Extract and format data
-        dob = parse_date(result.get('dob', ''))
-        issue_date = parse_date(result.get('issue_date', ''))
-        
-        parsed_data = {
-            "cccd_moi": result.get('id', '').strip(),
-            "cmnd_cu": result.get('old_id', '').strip() if 'old_id' in result else '',
-            "name": result.get('name', '').strip(),
-            "dob": dob.isoformat() if dob else "",
-            "gender": result.get('gender', '').strip(),
-            "address": result.get('address', '').strip(),
-            "issue_date": issue_date.isoformat() if issue_date else "",
-            "ethnicity": result.get('ethnicity', '').strip(),
-            "religion": result.get('religion', '').strip(),
-            "hometown": result.get('hometown', '').strip()
-        }
-        
-        return parsed_data, None
-        
-    except Exception as e:
-        app.logger.error(f"CitizenID recognition error: {str(e)}")
-        return None, f"Lỗi đọc CCCD: {str(e)}"
-
 def parse_qr_text(qr_text: str):
-    """Fallback parser for QR text"""
     if not qr_text:
         return None, "QR code trống"
         
+    # Loại bỏ khoảng trắng đầu cuối
     qr_text = qr_text.strip()
     
+    # Kiểm tra định dạng cơ bản: có chứa ký tự "|"
     if "|" not in qr_text:
-        return None, "QR không đúng định dạng CCCD"
+        return None, "QR không đúng định dạng CCCD (thiếu ký tự '|')"
     
     parts = qr_text.split("|")
     
+    # Định dạng CCCD thường có ít nhất 7 phần
     if len(parts) < 7:
         return None, f"QR thiếu thông tin. Cần 7 phần, chỉ có {len(parts)} phần"
     
+    # Kiểm tra từng phần
     for i, part in enumerate(parts[:7]):
         if not part.strip():
             return None, f"Phần thông tin thứ {i+1} bị trống"
@@ -286,6 +206,7 @@ def login():
         conn = get_db_connection()
         cur = conn.cursor()
         
+        # Kiểm tra user có tồn tại không
         cur.execute("SELECT id, username, fullname FROM users WHERE username = %s", (username,))
         user = cur.fetchone()
         
@@ -317,7 +238,7 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# 2) QUÉT QR với citizenID_recognition
+# 2) QUÉT QR
 @app.route("/scan_qr_image", methods=["POST"])
 def scan_qr_image():
     try:
@@ -327,20 +248,12 @@ def scan_qr_image():
         
         parsed = None
         error_msg = None
-        used_citizenid = False
         
-        # Ưu tiên sử dụng citizenID_recognition nếu có ảnh
-        if img_data and use_citizenid:
-            parsed, error_msg = parse_cccd_with_citizenid(img_data)
-            if parsed:
-                used_citizenid = True
-                app.logger.info("✅ Đã sử dụng citizenID_recognition để đọc CCCD")
-        
-        # Nếu citizenID_recognition thất bại, thử qr_text
-        if not parsed and qr_text:
+        # Ưu tiên sử dụng qr_text trực tiếp từ scanner
+        if qr_text:
             parsed, error_msg = parse_qr_text(qr_text)
         
-        # Nếu vẫn không có, thử OpenCV QR code detection
+        # Nếu không có qr_text hoặc parse thất bại, thử decode từ ảnh
         if not parsed and not error_msg and img_data:
             try:
                 encoded = img_data.split(",")[1] if "," in img_data else img_data
@@ -363,7 +276,7 @@ def scan_qr_image():
             return jsonify({
                 "ok": False, 
                 "msg": error_msg,
-                "reload": True
+                "reload": True  # Thêm flag để client biết reload scanner
             }), 400
         
         if not parsed:
@@ -385,8 +298,7 @@ def scan_qr_image():
             "ok": True, 
             "data": parsed, 
             "duplicate": bool(exists),
-            "msg": f"Đọc CCCD thành công với {'citizenID_recognition' if used_citizenid else 'QR code'}",
-            "method": "citizenid" if used_citizenid else "qrcode"
+            "msg": "Đọc QR thành công"
         })
 
     except Exception as e:
@@ -394,7 +306,7 @@ def scan_qr_image():
         return jsonify({
             "ok": False, 
             "error": str(e), 
-            "msg": "Lỗi xử lý CCCD",
+            "msg": "Lỗi xử lý QR",
             "reload": True
         }), 500
 
@@ -495,27 +407,11 @@ def save_cccd_record():
         conn = get_db_connection()
         cur = conn.cursor()
 
-        # Thêm các trường mới từ citizenID_recognition
         cur.execute("""
             INSERT INTO cccd_records
             (cccd_moi, cmnd_cu, name, dob, gender, address, issue_date, phone, user,
-             front_image, back_image, face_cropped, ethnicity, religion, hometown)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-            ON DUPLICATE KEY UPDATE
-            cmnd_cu = VALUES(cmnd_cu),
-            name = VALUES(name),
-            dob = VALUES(dob),
-            gender = VALUES(gender),
-            address = VALUES(address),
-            issue_date = VALUES(issue_date),
-            phone = VALUES(phone),
-            user = VALUES(user),
-            front_image = VALUES(front_image),
-            back_image = VALUES(back_image),
-            face_cropped = VALUES(face_cropped),
-            ethnicity = VALUES(ethnicity),
-            religion = VALUES(religion),
-            hometown = VALUES(hometown)
+             front_image, back_image, face_cropped)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             data.get("cccd_moi", ""),
             data.get("cmnd_cu", ""),
@@ -529,9 +425,6 @@ def save_cccd_record():
             front_file if front_exists else None,
             back_file if back_exists else None,
             face_file if face_exists else None,
-            data.get("ethnicity", ""),
-            data.get("religion", ""),
-            data.get("hometown", "")
         ))
 
         conn.commit()
@@ -542,6 +435,8 @@ def save_cccd_record():
 
     except mysql.connector.Error as err:
         app.logger.error(f"Database error: {err}")
+        if err.errno == 1062:  # Duplicate entry
+            return jsonify({"ok": False, "error": "CCCD đã tồn tại trong hệ thống"}), 400
         return jsonify({"ok": False, "error": f"Database error: {err}"}), 500
     except Exception as e:
         app.logger.error(f"Save record error: {str(e)}")
@@ -555,8 +450,7 @@ def get_records_by_user(username):
         cur = conn.cursor(dictionary=True)
         
         cur.execute("""
-            SELECT cccd_moi, cmnd_cu, name, dob, gender, address, issue_date, phone, 
-                   front_image, back_image, face_cropped, ethnicity, religion, hometown, created_at 
+            SELECT cccd_moi, name, dob, phone, front_image, back_image, face_cropped, created_at 
             FROM cccd_records 
             WHERE user = %s 
             ORDER BY created_at DESC
@@ -569,8 +463,6 @@ def get_records_by_user(username):
         for record in records:
             if record['dob']:
                 record['dob'] = record['dob'].isoformat()
-            if record['issue_date']:
-                record['issue_date'] = record['issue_date'].isoformat()
             if record['created_at']:
                 record['created_at'] = record['created_at'].isoformat()
         
@@ -612,15 +504,6 @@ def get_users():
     except Exception as e:
         app.logger.error(f"Get users error: {str(e)}")
         return jsonify({"ok": False, "error": str(e)}), 500
-
-# 9) KIỂM TRA CITIZENID RECOGNITION
-@app.route("/check_citizenid", methods=["GET"])
-def check_citizenid():
-    return jsonify({
-        "ok": True,
-        "available": use_citizenid,
-        "message": "citizenID_recognition sẵn sàng" if use_citizenid else "citizenID_recognition không khả dụng"
-    })
 
 # -------------------------
 if __name__ == "__main__":
