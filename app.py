@@ -22,14 +22,12 @@ YOLO_MODEL_PATH = os.getenv("YOLO_MODEL_PATH", "models/yolov8m-face.pt")
 
 os.makedirs(IMAGES_DIR, exist_ok=True)
 
-# Tạo Flask app với cấu hình đúng
+# Tạo Flask app
 app = Flask(__name__, 
             template_folder='templates',
             static_folder='static')
 app.logger.setLevel(logging.INFO)
 app.secret_key = os.getenv("SECRET_KEY", "your-secret-key-here")
-
-# Bật debug mode để dễ tìm lỗi
 app.config['DEBUG'] = True
 
 # -------------------------
@@ -53,6 +51,8 @@ def get_db_connection():
 
 def init_db():
     conn = get_db_connection()
+    if not conn:
+        return
     cursor = conn.cursor()
     cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{DB_NAME}` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;")
     cursor.execute(f"USE `{DB_NAME}`;")
@@ -108,7 +108,7 @@ except Exception as e:
     app.logger.warning(f"Ultralytics not available or failed to load: {e}. Face crop disabled.")
 
 def crop_face_using_yolo(img_path, save_path):
-    """Crop face using YOLO, save to save_path"""
+    """Crop face using YOLO"""
     if not use_yolo or not yolo_detector:
         return False
 
@@ -117,7 +117,7 @@ def crop_face_using_yolo(img_path, save_path):
         if len(results) == 0 or len(results[0].boxes) == 0:
             return False
 
-        box = results[0].boxes.xyxy[0].cpu().numpy()  # xmin, ymin, xmax, ymax
+        box = results[0].boxes.xyxy[0].cpu().numpy()
         img = Image.open(img_path)
         face = img.crop((box[0], box[1], box[2], box[3]))
         face.save(save_path)
@@ -130,27 +130,32 @@ def crop_face_using_yolo(img_path, save_path):
 # HELPERS: PARSE QR
 # -------------------------
 def parse_qr_text(qr_text: str):
+    """Parse QR text từ CCCD"""
     if not qr_text:
         return None, "QR code trống"
-        
-    # Loại bỏ khoảng trắng đầu cuối
+    
+    # Clean text
     qr_text = qr_text.strip()
     
-    # Kiểm tra định dạng cơ bản: có chứa ký tự "|"
+    # Debug log
+    app.logger.info(f"QR text to parse: {qr_text[:100]}...")
+    
+    # Kiểm tra xem có phải format CCCD không
     if "|" not in qr_text:
-        return None, "QR không đúng định dạng CCCD (thiếu ký tự '|')"
+        # Thử tách bằng dấu phẩy
+        if "," in qr_text:
+            parts = qr_text.split(",")
+        else:
+            return None, "QR không đúng định dạng CCCD"
+    else:
+        parts = qr_text.split("|")
     
-    parts = qr_text.split("|")
-    
-    # Định dạng CCCD thường có ít nhất 7 phần
+    # CCCD có ít nhất 7 trường
     if len(parts) < 7:
+        app.logger.warning(f"QR thiếu thông tin. Có {len(parts)} phần: {parts}")
         return None, f"QR thiếu thông tin. Cần 7 phần, chỉ có {len(parts)} phần"
     
-    # Kiểm tra từng phần
-    for i, part in enumerate(parts[:7]):
-        if not part.strip():
-            return None, f"Phần thông tin thứ {i+1} bị trống"
-    
+    # Parse từng phần
     cccd_moi = parts[0].strip() if len(parts) > 0 else ""
     cmnd_cu = parts[1].strip() if len(parts) > 1 else ""
     name = parts[2].strip() if len(parts) > 2 else ""
@@ -159,18 +164,25 @@ def parse_qr_text(qr_text: str):
     address = parts[5].strip() if len(parts) > 5 else ""
     issue_date_str = parts[6].strip() if len(parts) > 6 else ""
 
+    # Parse date với nhiều định dạng
     def parse_date(s):
         if not s:
             return None
-        for fmt in ("%d/%m/%Y", "%Y-%m-%d", "%d-%m-%Y"):
+        # Remove any non-numeric characters except / and -
+        s = ''.join(c for c in s if c.isdigit() or c in '/-')
+        
+        for fmt in ("%d/%m/%Y", "%Y%m%d", "%d-%m-%Y", "%Y-%m-%d"):
             try:
                 return datetime.strptime(s, fmt).date()
-            except:
+            except ValueError:
                 continue
         return None
 
     dob = parse_date(dob_str)
     issue_date = parse_date(issue_date_str)
+    
+    # Debug
+    app.logger.info(f"Parsed: CCCD={cccd_moi}, Name={name}, DOB={dob}, Gender={gender}")
 
     return {
         "cccd_moi": cccd_moi,
@@ -204,9 +216,12 @@ def login():
             return jsonify({"ok": False, "msg": "Vui lòng nhập username"}), 400
         
         conn = get_db_connection()
+        if not conn:
+            return jsonify({"ok": False, "msg": "Không thể kết nối database"}), 500
+            
         cur = conn.cursor()
         
-        # Kiểm tra user có tồn tại không
+        # Kiểm tra user
         cur.execute("SELECT id, username, fullname FROM users WHERE username = %s", (username,))
         user = cur.fetchone()
         
@@ -238,81 +253,47 @@ def logout():
     session.clear()
     return redirect(url_for('login'))
 
-# 2) QUÉT QR
-@app.route("/scan_qr_image", methods=["POST"])
-def scan_qr_image():
+# QUÉT QR - SIMPLE VERSION
+@app.route("/scan_qr", methods=["POST"])
+def scan_qr():
+    """API quét QR đơn giản"""
     try:
         data = request.json
-        img_data = data.get("image", "")
         qr_text = data.get("qr_text", "")
         
-        parsed = None
-        error_msg = None
-        
-        # Ưu tiên sử dụng qr_text trực tiếp từ scanner
-        if qr_text:
-            parsed, error_msg = parse_qr_text(qr_text)
-        
-        # Nếu không có qr_text hoặc parse thất bại, thử decode từ ảnh
-        if not parsed and not error_msg and img_data:
-            try:
-                encoded = img_data.split(",")[1] if "," in img_data else img_data
-                img_bytes = base64.b64decode(encoded)
-
-                img_array = np.frombuffer(img_bytes, np.uint8)
-                img = cv2.imdecode(img_array, cv2.IMREAD_GRAYSCALE)  # Chuyển sang grayscale
-                
-                # Tăng độ tương phản
-                img = cv2.convertScaleAbs(img, alpha=1.3, beta=20)
-                
-                # Làm sắc nét
-                kernel = np.array([[-1,-1,-1], [-1,9,-1], [-1,-1,-1]])
-                img = cv2.filter2D(img, -1, kernel)
-                
-                qr = cv2.QRCodeDetector()
-                text, pts, _ = qr.detectAndDecode(img)
-                
-                if text:
-                    parsed, error_msg = parse_qr_text(text)
-                else:
-                    # Thử thêm với adaptive threshold
-                    img_thresh = cv2.adaptiveThreshold(img, 255, 
-                        cv2.ADAPTIVE_THRESH_GAUSSIAN_C, cv2.THRESH_BINARY, 11, 2)
-                    text2, pts2, _ = qr.detectAndDecode(img_thresh)
-                    if text2:
-                        parsed, error_msg = parse_qr_text(text2)
-                    else:
-                        error_msg = "Không tìm thấy QR code trong ảnh"
-            except Exception as img_error:
-                app.logger.error(f"Image decode error: {img_error}")
-                error_msg = "Lỗi xử lý ảnh"
-
-        if not parsed and error_msg:
+        if not qr_text:
             return jsonify({
                 "ok": False, 
-                "msg": error_msg,
-                "reload": True  # Thêm flag để client biết reload scanner
-            }), 400
-        
-        if not parsed:
-            return jsonify({
-                "ok": False, 
-                "msg": "Không đọc được QR code",
+                "msg": "Không có dữ liệu QR",
                 "reload": True
             }), 400
-
+        
+        # Parse QR
+        parsed, error_msg = parse_qr_text(qr_text)
+        
+        if not parsed:
+            app.logger.warning(f"QR parse failed: {error_msg}, QR text: {qr_text[:50]}")
+            return jsonify({
+                "ok": False, 
+                "msg": error_msg or "Không đọc được QR code",
+                "reload": True
+            }), 400
+        
         # Check duplicate
         conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute("SELECT id FROM cccd_records WHERE cccd_moi = %s", (parsed["cccd_moi"],))
-        exists = cur.fetchone()
-        cur.close()
-        conn.close()
+        duplicate = False
+        if conn:
+            cur = conn.cursor()
+            cur.execute("SELECT id FROM cccd_records WHERE cccd_moi = %s", (parsed["cccd_moi"],))
+            exists = cur.fetchone()
+            duplicate = bool(exists)
+            cur.close()
+            conn.close()
 
         return jsonify({
             "ok": True, 
             "data": parsed, 
-            "duplicate": bool(exists),
+            "duplicate": duplicate,
             "msg": "Đọc QR thành công"
         })
 
@@ -339,7 +320,10 @@ def save_front_image():
         if "," in img64:
             img64 = img64.split(",")[1]
         
-        raw = base64.b64decode(img64)
+        try:
+            raw = base64.b64decode(img64)
+        except:
+            return jsonify({"ok": False, "error": "Dữ liệu ảnh không hợp lệ"}), 400
 
         front_name = f"cccd_front_{cccd}.jpg"
         front_path = os.path.join(IMAGES_DIR, front_name)
@@ -348,7 +332,7 @@ def save_front_image():
 
         # YOLO face crop
         face_path = None
-        if use_yolo:
+        if use_yolo and os.path.exists(front_path):
             face_name = f"cccd_face_{cccd}.jpg"
             face_fullpath = os.path.join(IMAGES_DIR, face_name)
             success = crop_face_using_yolo(front_path, face_fullpath)
@@ -380,7 +364,10 @@ def save_back_image():
         if "," in img64:
             img64 = img64.split(",")[1]
         
-        raw = base64.b64decode(img64)
+        try:
+            raw = base64.b64decode(img64)
+        except:
+            return jsonify({"ok": False, "error": "Dữ liệu ảnh không hợp lệ"}), 400
 
         back_name = f"cccd_back_{cccd}.jpg"
         back_path = os.path.join(IMAGES_DIR, back_name)
@@ -420,6 +407,9 @@ def save_cccd_record():
             return jsonify({"ok": False, "error": "Ảnh CCCD chưa được upload"}), 400
 
         conn = get_db_connection()
+        if not conn:
+            return jsonify({"ok": False, "error": "Không thể kết nối database"}), 500
+            
         cur = conn.cursor()
 
         cur.execute("""
@@ -462,6 +452,9 @@ def save_cccd_record():
 def get_records_by_user(username):
     try:
         conn = get_db_connection()
+        if not conn:
+            return jsonify({"ok": False, "error": "Không thể kết nối database"}), 500
+            
         cur = conn.cursor(dictionary=True)
         
         cur.execute("""
@@ -509,6 +502,9 @@ def serve_image(filename):
 def get_users():
     try:
         conn = get_db_connection()
+        if not conn:
+            return jsonify({"ok": False, "error": "Không thể kết nối database"}), 500
+            
         cur = conn.cursor(dictionary=True)
         cur.execute("SELECT id, username, fullname, role, created_at FROM users ORDER BY username")
         users = cur.fetchall()

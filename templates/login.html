@@ -5,33 +5,22 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Đăng nhập - QR CCCD Scanner</title>
     <script src="https://cdn.tailwindcss.com"></script>
-    <style>
-        body {
-            background: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
-            min-height: 100vh;
-        }
-        .login-card {
-            background: rgba(255, 255, 255, 0.05);
-            backdrop-filter: blur(10px);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
-    </style>
 </head>
-<body class="flex items-center justify-center p-4">
-    <div class="login-card w-full max-w-md p-8 rounded-2xl shadow-2xl">
+<body class="bg-gray-900 min-h-screen flex items-center justify-center p-4">
+    <div class="bg-gray-800 p-8 rounded-xl shadow-2xl w-full max-w-md">
         <div class="text-center mb-8">
             <h1 class="text-3xl font-bold text-white mb-2">QR CCCD Scanner</h1>
-            <p class="text-slate-400">Đăng nhập để sử dụng hệ thống</p>
+            <p class="text-gray-400">Hệ thống quét và lưu trữ CCCD</p>
         </div>
         
         <div id="login-error" class="mb-4 p-3 bg-red-900/30 text-red-300 rounded-lg hidden"></div>
         
-        <div class="space-y-4">
+        <div class="space-y-6">
             <div>
-                <label class="block text-sm font-medium text-slate-300 mb-2">Tên đăng nhập</label>
+                <label class="block text-sm font-medium text-gray-300 mb-2">Tên đăng nhập</label>
                 <input type="text" id="username" 
-                       class="w-full p-3 rounded-lg bg-slate-800 border border-slate-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-                       placeholder="Nhập username">
+                       class="w-full p-3 rounded-lg bg-gray-700 border border-gray-600 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+                       placeholder="Nhập username" autofocus>
             </div>
             
             <button id="btn-login" 
@@ -39,10 +28,8 @@
                 Đăng nhập
             </button>
             
-            <div class="mt-6 pt-6 border-t border-slate-700 text-center">
-                <p class="text-sm text-slate-400">
-                    Hệ thống quét và lưu trữ thông tin CCCD qua QR code
-                </p>
+            <div class="text-center text-sm text-gray-500">
+                Nhập username để đăng nhập vào hệ thống
             </div>
         </div>
     </div>
@@ -51,6 +38,7 @@
         document.getElementById('btn-login').onclick = async () => {
             const username = document.getElementById('username').value.trim();
             const errorDiv = document.getElementById('login-error');
+            const btn = document.getElementById('btn-login');
             
             if (!username) {
                 errorDiv.textContent = "Vui lòng nhập username";
@@ -59,9 +47,8 @@
             }
             
             errorDiv.classList.add('hidden');
-            document.getElementById('btn-login').disabled = true;
-            document.getElementById('btn-login').innerHTML = 
-                '<span class="flex items-center justify-center">⏳ Đang đăng nhập...</span>';
+            btn.disabled = true;
+            btn.innerHTML = '⏳ Đang đăng nhập...';
             
             try {
                 const res = await fetch("/login", {
@@ -82,8 +69,8 @@
                 errorDiv.textContent = "Lỗi kết nối server";
                 errorDiv.classList.remove('hidden');
             } finally {
-                document.getElementById('btn-login').disabled = false;
-                document.getElementById('btn-login').innerHTML = "Đăng nhập";
+                btn.disabled = false;
+                btn.innerHTML = "Đăng nhập";
             }
         };
         
