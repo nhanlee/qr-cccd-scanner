@@ -187,7 +187,7 @@
               <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"/>
               </svg>
-              Quét QR CCCD
+              Quét CCCD
             </div>
           </button>
           
@@ -205,11 +205,11 @@
             <ul class="text-sm text-slate-400 space-y-2">
               <li class="flex items-start">
                 <span class="inline-block w-2 h-2 bg-blue-500 rounded-full mt-1 mr-2"></span>
-                Chọn "Quét QR CCCD" để bắt đầu quét
+                Chọn "Quét CCCD" để bắt đầu quét
               </li>
               <li class="flex items-start">
                 <span class="inline-block w-2 h-2 bg-green-500 rounded-full mt-1 mr-2"></span>
-                Đưa QR code vào khung xanh để quét
+                Đưa CCCD vào khung xanh để quét QR
               </li>
               <li class="flex items-start">
                 <span class="inline-block w-2 h-2 bg-amber-500 rounded-full mt-1 mr-2"></span>
@@ -230,11 +230,11 @@
       <!-- QR Scanning Section -->
       <div id="scan-section" class="hidden">
         <div class="card p-6">
-          <h2 class="text-xl font-semibold text-white mb-4">Quét QR CCCD</h2>
+          <h2 class="text-xl font-semibold text-white mb-4">Quét CCCD</h2>
           
           <div id="camera-check" class="mb-4 p-4 bg-yellow-900/30 text-yellow-300 rounded-lg hidden">
             <p class="font-semibold">⚠️ Yêu cầu quyền truy cập camera</p>
-            <p class="text-sm mt-1">Vui lòng cho phép truy cập camera để sử dụng tính năng quét QR</p>
+            <p class="text-sm mt-1">Vui lòng cho phép truy cập camera để sử dụng tính năng quét CCCD</p>
             <button id="btn-enable-camera" class="mt-2 px-4 py-2 bg-yellow-600 hover:bg-yellow-700 rounded-lg">
               Cho phép camera
             </button>
@@ -538,7 +538,7 @@
         scanQRCode();
         
         document.getElementById('qr-info').innerHTML = 
-          '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">✅ Camera đã sẵn sàng (Zoom 2x). Đưa QR code CCCD vào khung xanh.</div>';
+          '<div class="p-4 bg-blue-900/30 text-blue-300 rounded-lg">✅ Camera đã sẵn sàng (Zoom 2x). Đưa CCCD vào khung xanh.</div>';
         
         hideCameraPermissionRequest();
         
@@ -659,17 +659,17 @@
     }
 
     // ---------------------
-    // HANDLE QR RESULT
+    // HANDLE QR RESULT với citizenID_recognition
     // ---------------------
     function handleQRResult(result) {
       if (!result.ok) {
-        let errorMsg = result.msg || "Không đọc được QR code";
+        let errorMsg = result.msg || "Không đọc được CCCD";
         
         if (result.reload) {
           showQRScanError(errorMsg, true);
           
           setTimeout(() => {
-            alert(`❌ ${errorMsg}\n\nVui lòng thử lại với QR code CCCD hợp lệ.`);
+            alert(`❌ ${errorMsg}\n\nVui lòng thử lại với CCCD hợp lệ.`);
           }, 300);
         } else {
           showQRScanError(errorMsg, false);
@@ -679,8 +679,8 @@
 
       parsedQR = result.data;
 
-      // Display QR data
-      document.getElementById('qr-data').innerHTML = `
+      // Tạo HTML để hiển thị thông tin chi tiết
+      let html = `
         <div class="grid grid-cols-2 gap-3">
           <div><b class="text-slate-300">CCCD mới:</b></div>
           <div class="font-mono text-blue-400">${parsedQR.cccd_moi || 'N/A'}</div>
@@ -702,11 +702,40 @@
           
           <div><b class="text-slate-300">Ngày cấp:</b></div>
           <div>${parsedQR.issue_date || 'N/A'}</div>
+      `;
+      
+      // Thêm các trường mới từ citizenID_recognition nếu có
+      if (parsedQR.ethnicity) {
+        html += `
+          <div><b class="text-slate-300">Dân tộc:</b></div>
+          <div>${parsedQR.ethnicity || 'N/A'}</div>
+        `;
+      }
+      
+      if (parsedQR.religion) {
+        html += `
+          <div><b class="text-slate-300">Tôn giáo:</b></div>
+          <div>${parsedQR.religion || 'N/A'}</div>
+        `;
+      }
+      
+      if (parsedQR.hometown) {
+        html += `
+          <div><b class="text-slate-300">Quê quán:</b></div>
+          <div>${parsedQR.hometown || 'N/A'}</div>
+        `;
+      }
+      
+      html += `
         </div>
         <div class="mt-4 p-3 rounded-lg ${result.duplicate ? 'bg-red-900/30 text-red-300' : 'bg-green-900/30 text-green-300'}">
-          ${result.duplicate ? '⚠️ CCCD đã tồn tại trong hệ thống' : '✅ Hợp lệ – chưa tồn tại'}
+          ${result.method === 'citizenid' ? '✅ Đọc bằng citizenID_recognition' : '✅ Đọc bằng QR code'} - 
+          ${result.duplicate ? '⚠️ CCCD đã tồn tại' : '✅ Chưa tồn tại trong hệ thống'}
         </div>
       `;
+
+      // Display QR data
+      document.getElementById('qr-data').innerHTML = html;
 
       // Switch to capture section
       showSection('capture-section');
@@ -776,7 +805,7 @@
     // ---------------------
     document.getElementById('btn-front').onclick = async () => {
       if (!parsedQR) {
-        alert("Vui lòng quét QR trước");
+        alert("Vui lòng quét CCCD trước");
         return;
       }
 
@@ -812,7 +841,7 @@
 
     document.getElementById('btn-back').onclick = async () => {
       if (!parsedQR) {
-        alert("Vui lòng quét QR trước");
+        alert("Vui lòng quét CCCD trước");
         return;
       }
 
@@ -856,7 +885,7 @@
       }
 
       if (!parsedQR) {
-        alert("Vui lòng quét QR code trước");
+        alert("Vui lòng quét CCCD trước");
         return;
       }
 

@@ -12,3 +12,6 @@ pandas==2.1.4
 ultralytics==8.3.25
 python-dotenv
 mysql-connector-python>=8.0.0
+
+# Thư viện citizenID_recognition từ GitHub
+git+https://github.com/nguyenhoangthienan/citizenID_recognition.git
